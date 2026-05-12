@@ -2,7 +2,7 @@
 
 **Target:** `csc4026z.link` (cleartext port 51825, WireGuard port 51820)  
 **Protocol:** UDP/msgpack custom chat protocol  
-**Findings:** 5 confirmed vulnerabilities (1 High, 3 Low, 1 Informational)  
+**Findings:** 6 confirmed vulnerabilities (1 High, 4 Low, 1 Informational)  
 **Scope:** Authorised security research per assignment brief. DoS excluded.
 
 ---
@@ -207,6 +207,57 @@ Session IDs should be bound to the source IP:port that established the session. 
 
 ---
 
+## VULN-06 — Full User Enumeration via LIST_USERS + WHOIS
+
+**Severity:** Low  
+**Category:** Information Disclosure / Broken Access Control  
+**PoC:** `poc_06_user_enumeration.py`
+
+### What it is
+Any authenticated session — including a freshly connected socket that has never set a username — can call `LIST_USERS` (request type 14) to retrieve every username currently connected to the server, then call `WHOIS` (request type 10) on each to retrieve their transport type and every channel they have joined. No elevated privilege is required.
+
+### Impact
+A single attacker can map the full server social graph in seconds: who is online, whether each user is on the cleartext or WireGuard channel, and which channels they are in. This is the user-side counterpart to VULN-01 (which leaks the same from the channel side). Together they allow complete enumeration from both directions — every user's channels and every channel's members — without ever joining anything.
+
+The transport field is particularly sensitive: it reveals which users are on the unencrypted cleartext channel, making them direct targets for VULN-05 session hijacking.
+
+### Reproduction
+1. Connect to port 51825 (no username needed).
+2. Send `LIST_USERS` (`request_type: 14, offset: 0`). Server returns all connected usernames.
+3. Send `WHOIS` (`request_type: 10`) for each username. Server returns transport type and channel list.
+
+### Evidence
+Output captured during active usage (20 concurrent users):
+
+```
+Connected (no username set — bare session)
+
+Users currently online (20):
+  cleartext_user_24323276, cleartext_user_31127210, cleartext_user_28314629,
+  cleartext_user_39153644, cleartext_user_26044757, cleartext_user_37629753,
+  cleartext_user_24662071, cleartext_user_28395713, cleartext_user_32086879,
+  cleartext_user_21892816, cleartext_user_36487231, cleartext_user_38786692,
+  cleartext_user_26702871, cleartext_user_26980780, cleartext_user_42069073,
+  cleartext_user_40339353, cleartext_user_40742563, cleartext_user_24422145,
+  cleartext_user_41198130, cleartext_user_32050799
+
+Detailed profile for each user:
+  Username                       Transport    Channels
+  ------------------------------ ------------ -------
+  cleartext_user_24323276        cleartext    (none)
+  cleartext_user_31127210        cleartext    (none)
+  cleartext_user_28314629        cleartext    (none)
+  cleartext_user_32086879        cleartext    probe-11-3716
+  ... (16 more users, all cleartext transport)
+
+=== Full server social graph exposed to any connected user ===
+```
+
+### Expected behaviour
+`LIST_USERS` should either be restricted to admin sessions or omitted entirely. `WHOIS` channel membership should not be visible to users outside those channels. At minimum, the transport type should not be disclosed — it directly signals which users are exploitable via VULN-05.
+
+---
+
 ## Summary
 
 | ID | Vulnerability | Severity | PoC |
@@ -215,6 +266,7 @@ Session IDs should be bound to the source IP:port that established the session. 
 | VULN-01 | CHANNEL_INFO exposes non-member data | Low | `poc_01_channel_info_disclosure.py` |
 | VULN-02 | Username accepts control/injection chars | Low | `poc_02_username_injection.py` |
 | VULN-04 | DISCONNECT bypasses username hold period | Low | `poc_04_username_reclaim.py` |
+| VULN-06 | Full user enumeration via LIST_USERS + WHOIS | Low | `poc_06_user_enumeration.py` |
 | VULN-03 | Python exceptions exposed in responses | Informational | `poc_03_error_disclosure.py` |
 
-All five vulnerabilities are reproducible on demand by running the corresponding PoC script.
+All six vulnerabilities are reproducible on demand by running the corresponding PoC script.
