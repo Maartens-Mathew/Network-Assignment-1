@@ -4,5 +4,8 @@ env/
 
 .idea/
 .vscode/
+.claude/
 
 __pycache__/
+.env
+*.env
