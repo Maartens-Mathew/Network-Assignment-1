@@ -2,8 +2,78 @@
 
 **Target:** `csc4026z.link` (cleartext port 51825, WireGuard port 51820)  
 **Protocol:** UDP/msgpack custom chat protocol  
-**Findings:** 6 confirmed vulnerabilities (1 High, 4 Low, 1 Informational)  
+**Findings:** 6 confirmed vulnerabilities (1 High, 3 Low, 2 Informational)  
 **Scope:** Authorised security research per assignment brief. DoS excluded.
+
+---
+
+## VULN-05 — Session Hijacking via Unbound Session IDs
+
+**Severity:** High  
+**Category:** Broken Authentication / Session Management  
+**PoC:** `poc_05_session_hijacking.py`
+
+### What it is
+The server assigns a u32 session ID on `CONNECT` (request type 1) but never binds that session to the client's source IP address or UDP port. Any socket that presents a valid session ID is treated as the legitimate session owner.
+
+Two issues combine to make this exploitable:
+
+1. **The cleartext channel (port 51825) sends all traffic in plaintext** — including the session ID, which appears in every packet. This is by design; the cleartext port exists to demonstrate unprotected communication.
+2. **The server applies no source binding to sessions** — this is the actual server-side flaw. Even on cleartext, the server could require that requests come from the same IP:port that established the session, which would prevent replay from a different socket. It does not.
+
+The distinction matters: that cleartext traffic is readable is expected. That anyone who reads a single packet can fully impersonate the victim, send messages as them, rename them, and kill their session — that is the server design flaw on top of the transport.
+
+On a shared network — campus LAN, university Wi-Fi — an attacker can capture a single UDP packet from the victim, extract the session ID, and use it from a completely separate socket to take full control of the account.
+
+### Impact
+Full account takeover. Confirmed via PoC:
+
+1. **Identity theft** — attacker sends `WHOAMI` with sniffed session ID; server returns victim's username
+2. **Message injection** — attacker sends channel messages that appear to come from the victim
+3. **Account rename** — attacker changes the victim's username
+4. **Session termination** — attacker sends `DISCONNECT`; victim's session is permanently destroyed
+
+The victim has no indication that their session has been compromised. There is no per-session secret, no IP binding, and no challenge-response that would prevent replay of a sniffed session ID.
+
+### Real-world attack path
+On a shared network (campus LAN, university Wi-Fi), the attacker runs:
+
+```bash
+tcpdump -i eth0 -n 'udp port 51825' -X
+```
+
+Every UDP packet the victim sends contains their session ID in the plaintext msgpack body — visible in the `tcpdump` hex dump. The attacker decodes the `session` field from any single captured packet. No cracking or brute-forcing required; the credential is sitting in the clear on the wire.
+
+The attacker then opens their own UDP socket and replays requests using the sniffed session ID. The server accepts them without challenge. The victim has no indication anything is wrong until their username changes or their session is killed.
+
+WireGuard (port 51820) is not affected — the entire UDP payload is encrypted, so `tcpdump` yields only ciphertext and the session ID never appears on the wire.
+
+### Reproduction
+1. Attacker runs `tcpdump -i eth0 -n 'udp port 51825' -X` on any host with visibility to the victim's traffic.
+2. Victim connects to port 51825 and sends any request. The session ID is visible in plaintext in the packet body.
+3. Attacker extracts the session ID, opens a UDP socket, and sends requests to `csc4026z.link:51825` using that ID.
+4. Server accepts all requests as if they came from the victim.
+
+### Evidence
+```
+[Victim]   Connected with session: 2574006832
+[Victim]   Username:               clear-victim99
+[Victim]   Joined channel:         poc-hijack-9370
+
+[Network]  Attacker sniffs session ID from cleartext UDP: 2574006832
+
+[Attacker] WHOAMI with sniffed session → username: 'clear-victim99'
+[Attacker] Sent channel message as victim → delivered: True
+           Content:    'hijacked message from attacker'
+[Attacker] Renamed victim → success: True
+[Attacker] Force-disconnected victim → success: True
+[Victim]   Session still alive after attacker DISCONNECT: False
+
+=== CONFIRMED: Full account takeover on cleartext channel ===
+```
+
+### Expected behaviour
+Session IDs should be bound to the source IP:port that established the session. Requests from a different source address using the same session ID should be rejected. Alternatively (or additionally), the cleartext channel should not be used for sensitive communication — WireGuard provides the transport-layer confidentiality that prevents session ID sniffing.
 
 ---
 
@@ -57,7 +127,7 @@ Combined with VULN-04: an attacker waits for a known user to disconnect, immedia
 | `clear-a\nb` | `b'clear-a\nb'` | Log injection — inserts fake entries (blind) |
 | `clear-test\x00end` | `b'clear-test\x00end'` | Null byte — C-string systems truncate |
 | `clear-a\r\nb` | `b'clear-a\r\nb'` | CRLF injection — corrupts log systems |
-| `clear-‮admin` | `b'clear-\xe2\x80\xaeadmin'` | RTL override (U+202E) — suffix renders right-to-left |
+| `clear-\u202Eadmin` | `b'clear-\xe2\x80\xaeadmin'` | RTL override (U+202E) — suffix renders right-to-left |
 | `clear-te​st` | `b'clear-te\xe2\x80\x8bst'` | Zero-width space (U+200B) — invisible in display |
 | `clear-ｃlear` | `b'clear-\xef\xbd\x83lear'` | Fullwidth 'ｃ' (U+FF43) — visually identical to 'c' |
 
@@ -74,37 +144,12 @@ Stored:  b'clear-\n'           ← newline accepted
 Input:   username = 'clear-\x00shadow'
 Stored:  b'clear-\x00shadow'   ← null byte accepted
 
-Input:   username = 'clear-‮admin'
+Input:   username = 'clear-\u202Eadmin'
 Stored:  b'clear-\xe2\x80\xaeadmin'   ← RTL override accepted
 ```
 
 ### Expected behaviour
 Reject any username containing characters outside `[a-zA-Z0-9_\-]` after the prefix.
-
----
-
-## VULN-03 — Server Leaks Raw Python Exception Messages
-
-**Severity:** Informational  
-**Category:** Information Disclosure  
-**PoC:** `poc_03_error_disclosure.py`
-
-### What it is
-Sending unexpected types for certain fields causes the server to return raw Python `TypeError` and `AttributeError` messages in the `error` response field, exposing internal code patterns.
-
-### Impact
-Purely informational. The server being Python is stated in the assignment brief, so that is not a finding. What the exceptions do reveal is five specific internal code patterns — pagination slicing, session integer casting, channel null handling — which map internal implementation details. These patterns informed the discovery of other vulnerabilities in this report but do not constitute an exploitable path on their own.
-
-| Input | Python error returned | What it reveals |
-|---|---|---|
-| `offset = 1.5` | `"slice indices must be integers or None..."` | Pagination code: `data[offset : offset + PAGE_SIZE]` |
-| `offset = "x"` | `"can only concatenate str (not 'int') to str"` | String concatenation without type check |
-| `session = [list]` | `"int() argument must be a string..."` | Session lookup: `int(session)` called directly |
-| `channel = None` | `"object of type 'NoneType' has no len()"` | Channel validation: `len(channel)` without null check |
-| `username = b'\xc0\x80'` | `"startswith first arg must be bytes or a tuple..."` | Prefix check: bytes/str mismatch |
-
-### Expected behaviour
-Return a generic error message ("Invalid parameter") and handle all type errors internally without exposing exception details.
 
 ---
 
@@ -144,82 +189,42 @@ The 60-second hold period should apply regardless of whether the session ended v
 
 ---
 
-## VULN-05 — Session Hijacking via Unbound Session IDs
+## VULN-03 — Server Leaks Raw Python Exception Messages
 
-**Severity:** High  
-**Category:** Broken Authentication / Session Management  
-**PoC:** `poc_05_session_hijacking.py`
+**Severity:** Informational  
+**Category:** Information Disclosure  
+**PoC:** `poc_03_error_disclosure.py`
 
 ### What it is
-The server assigns a u32 session ID on `CONNECT` (request type 1) but never binds that session to the client's source IP address or UDP port. Any socket that presents a valid session ID is treated as the legitimate session owner.
-
-On the cleartext channel (port 51825), every packet contains the session ID in plaintext. A passive observer on the same network — campus LAN, shared Wi-Fi, or any MITM position — can capture a single UDP packet from the victim, extract the session ID, and then use it from a completely separate socket to fully control the victim's account.
+Sending unexpected types for certain fields causes the server to return raw Python `TypeError` and `AttributeError` messages in the `error` response field, exposing internal code patterns.
 
 ### Impact
-Full account takeover. Confirmed via PoC:
+Purely informational. The server being Python is stated in the assignment brief, so that is not a finding. What the exceptions do reveal is five specific internal code patterns — pagination slicing, session integer casting, channel null handling — which map internal implementation details. These patterns informed the discovery of other vulnerabilities in this report but do not constitute an exploitable path on their own.
 
-1. **Identity theft** — attacker sends `WHOAMI` with sniffed session ID; server returns victim's username
-2. **Message injection** — attacker sends channel messages that appear to come from the victim
-3. **Account rename** — attacker changes the victim's username
-4. **Session termination** — attacker sends `DISCONNECT`; victim's session is permanently destroyed
-
-The victim has no indication that their session has been compromised. There is no per-session secret, no IP binding, and no challenge-response that would prevent replay of a sniffed session ID.
-
-### Real-world attack path
-On a shared network (campus LAN, university Wi-Fi), the attacker runs:
-
-```bash
-tcpdump -i eth0 -n 'udp port 51825' -X
-```
-
-Every UDP packet the victim sends contains their session ID in the plaintext msgpack body — visible in the `tcpdump` hex dump. The attacker decodes the `session` field from any single captured packet. No cracking or brute-forcing required; the credential is sitting in the clear on the wire.
-
-The attacker then opens their own UDP socket and replays requests using the sniffed session ID. The server accepts them without challenge. The victim has no indication anything is wrong until their username changes or their session is killed.
-
-WireGuard (port 51820) is not affected — the entire UDP payload is encrypted, so `tcpdump` yields only ciphertext and the session ID never appears on the wire. This vulnerability is specific to the cleartext channel.
-
-### Reproduction
-1. Attacker runs `tcpdump -i eth0 -n 'udp port 51825' -X` on any host with visibility to the victim's traffic.
-2. Victim connects to port 51825 and sends any request. The session ID is visible in plaintext in the packet body.
-3. Attacker extracts the session ID, opens a UDP socket, and sends requests to `csc4026z.link:51825` using that ID.
-4. Server accepts all requests as if they came from the victim.
-
-### Evidence
-```
-[Victim]   Connected with session: 2574006832
-[Victim]   Username:               clear-victim99
-[Victim]   Joined channel:         poc-hijack-9370
-
-[Network]  Attacker sniffs session ID from cleartext UDP: 2574006832
-
-[Attacker] WHOAMI with sniffed session → username: 'clear-victim99'
-[Attacker] Sent channel message as victim → delivered: True
-           Content:    'hijacked message from attacker'
-[Attacker] Renamed victim → success: True
-[Attacker] Force-disconnected victim → success: True
-[Victim]   Session still alive after attacker DISCONNECT: False
-
-=== CONFIRMED: Full account takeover on cleartext channel ===
-```
+| Input | Python error returned | What it reveals |
+|---|---|---|
+| `offset = 1.5` | `"slice indices must be integers or None..."` | Pagination code: `data[offset : offset + PAGE_SIZE]` |
+| `offset = "x"` | `"can only concatenate str (not 'int') to str"` | String concatenation without type check |
+| `session = [list]` | `"int() argument must be a string..."` | Session lookup: `int(session)` called directly |
+| `channel = None` | `"object of type 'NoneType' has no len()"` | Channel validation: `len(channel)` without null check |
+| `username = b'\xc0\x80'` | `"startswith first arg must be bytes or a tuple..."` | Prefix check: bytes/str mismatch |
 
 ### Expected behaviour
-Session IDs should be bound to the source IP:port that established the session. Requests from a different source address using the same session ID should be rejected. Alternatively (or additionally), the cleartext channel should not be used for sensitive communication — WireGuard provides the transport-layer confidentiality that prevents session ID sniffing.
+Return a generic error message ("Invalid parameter") and handle all type errors internally without exposing exception details.
 
 ---
 
-## VULN-06 — Full User Enumeration via LIST_USERS + WHOIS
+## VULN-06 — User Enumeration via LIST_USERS + WHOIS
 
-**Severity:** Low  
-**Category:** Information Disclosure / Broken Access Control  
+**Severity:** Informational  
+**Category:** Information Disclosure  
 **PoC:** `poc_06_user_enumeration.py`
 
 ### What it is
 Any authenticated session — including a freshly connected socket that has never set a username — can call `LIST_USERS` (request type 14) to retrieve every username currently connected to the server, then call `WHOIS` (request type 10) on each to retrieve their transport type and every channel they have joined. No elevated privilege is required.
 
 ### Impact
-A single attacker can map the full server social graph in seconds: who is online, whether each user is on the cleartext or WireGuard channel, and which channels they are in. This is the user-side counterpart to VULN-01 (which leaks the same from the channel side). Together they allow complete enumeration from both directions — every user's channels and every channel's members — without ever joining anything.
-
-The transport field is particularly sensitive: it reveals which users are on the unencrypted cleartext channel, making them direct targets for VULN-05 session hijacking.
+A user list being accessible on a chat server may be intentional — many chat systems expose presence by design. What elevates this to a finding is the detail `WHOIS` returns beyond the username: the transport type and full channel membership. The transport field directly identifies which users are on the unencrypted cleartext channel, making them pre-identified targets for VULN-05. Combined with VULN-01, the two findings allow complete enumeration of the server social graph from both directions — every user's channels, and every channel's members.
 
 ### Reproduction
 1. Connect to port 51825 (no username needed).
@@ -254,7 +259,7 @@ Detailed profile for each user:
 ```
 
 ### Expected behaviour
-`LIST_USERS` should either be restricted to admin sessions or omitted entirely. `WHOIS` channel membership should not be visible to users outside those channels. At minimum, the transport type should not be disclosed — it directly signals which users are exploitable via VULN-05.
+`WHOIS` should not disclose transport type or channel membership to users outside those channels. The transport field in particular directly aids targeting for VULN-05.
 
 ---
 
@@ -266,7 +271,7 @@ Detailed profile for each user:
 | VULN-01 | CHANNEL_INFO exposes non-member data | Low | `poc_01_channel_info_disclosure.py` |
 | VULN-02 | Username accepts control/injection chars | Low | `poc_02_username_injection.py` |
 | VULN-04 | DISCONNECT bypasses username hold period | Low | `poc_04_username_reclaim.py` |
-| VULN-06 | Full user enumeration via LIST_USERS + WHOIS | Low | `poc_06_user_enumeration.py` |
 | VULN-03 | Python exceptions exposed in responses | Informational | `poc_03_error_disclosure.py` |
+| VULN-06 | User enumeration via LIST_USERS + WHOIS | Informational | `poc_06_user_enumeration.py` |
 
 All six vulnerabilities are reproducible on demand by running the corresponding PoC script.
