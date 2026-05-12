@@ -32,7 +32,6 @@ class WireguardSession:
         self.send_key       = None
         self.recv_key       = None
         self.send_counter   = 0
-        self.recv_counter   = 0
         self.receiver_index = None   # server's sender index (I_r)
         self.sender_index   = None   # our sender index (I_i)
 
@@ -47,7 +46,6 @@ class WireguardSession:
         self._ping_task  = None
         self._connected  = False
 
-        self._pending = {}
 
     async def connect(self, host: str, port: int):
         """Perform Wireguard handshake then send CONNECT chat message."""
@@ -92,7 +90,6 @@ class WireguardSession:
             response, ephemeral_priv, self.static_priv, chain_key, hash_
         )
         self.send_counter = 0
-        self.recv_counter = 0
 
         # Start background receive loop
         self._recv_task = asyncio.create_task(self._receive_loop())
@@ -133,8 +130,14 @@ class WireguardSession:
         await loop.sock_sendall(self._sock, packet)
 
     async def receive(self) -> bytes:
-        """Return the next decrypted msgpack message from the server."""
-        return await self._recv_queue.get()
+        """Return the next decrypted msgpack message from the server.
+
+        Raises the underlying exception if the receive loop has died.
+        """
+        item = await self._recv_queue.get()
+        if isinstance(item, Exception):
+            raise item
+        return item
 
     async def _raw_recv(self) -> bytes:
         """Read one raw UDP packet from the socket."""
@@ -150,14 +153,14 @@ class WireguardSession:
                     continue
 
                 if raw[0] == 0x04:
-                    plaintext = unwrap_message(raw, self.recv_key, self.recv_counter)
-                    self.recv_counter += 1
+                    plaintext = unwrap_message(raw, self.recv_key)
                     await self._recv_queue.put(plaintext)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"[recv_loop error] {e}")
+                await self._recv_queue.put(e)
+                break
 
     async def _ping_loop(self):
         """Background task: send PING every 30 seconds to keep the session alive."""

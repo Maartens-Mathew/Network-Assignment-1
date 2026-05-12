@@ -29,14 +29,13 @@ def wrap_message(plaintext: bytes, send_key: bytes,
     return packet
 
 
-def unwrap_message(packet: bytes, recv_key: bytes, counter: int) -> bytes:
+def unwrap_message(packet: bytes, recv_key: bytes) -> bytes:
     """
     Decrypt a Wireguard transport packet into plaintext msgpack bytes (Section 5.4.6).
 
     Args:
         packet:   raw UDP packet bytes
         recv_key: T_I_recv derived from handshake
-        counter:  N_I_recv (increment after each call)
 
     Returns:
         plaintext msgpack bytes

@@ -98,5 +98,5 @@ def test_transport_roundtrip():
     send_key = recv_key = b'\xd0\x98\xff\xa8\xf4u&\xc4$\x94\xcd&*X\xbfc\x91_\xc3ls\xd1\x1f\xff=\xd4<\x92\xc6\xb5\xb0q'
     plain  = b'\x82\xacrequest_type\x03\xaerequest_handle\xce\x124Vx'
     packet = wrap_message(plain, send_key, 0, 12345)
-    result = unwrap_message(packet, recv_key, 0)
+    result = unwrap_message(packet, recv_key)
     assert result == plain
