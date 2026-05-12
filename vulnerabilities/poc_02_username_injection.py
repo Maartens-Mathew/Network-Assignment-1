@@ -39,11 +39,11 @@ def h():
 
 
 PAYLOADS = [
-    ('clear-line1\nINJECTED_LOG_LINE',  'newline — log injection'),
-    ('clear-test\x00shadow',            'null byte — C-string truncation'),
-    ('clear-\r\nHTTP/1.1 200 OK',       'CRLF injection'),
+    ('clear-a\nb',                      'newline — log injection'),
+    ('clear-test\x00end',               'null byte — C-string truncation'),
+    ('clear-a\r\nb',                    'CRLF injection'),
     ('clear-‮admin',               'RTL override — display spoofing'),
-    ('clear-\t',                        'tab character'),
+    ('clear-a\tb',                      'tab character'),
 ]
 
 def main():
