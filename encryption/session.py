@@ -4,7 +4,7 @@ import socket
 import struct
 import msgpack
 
-from .handshake import build_initiation, process_response
+from .handshake import build_initiation, process_response, process_cookie_reply
 from .transport import wrap_message, unwrap_message
 
 SERVER_STATIC_PUBLIC_KEY = b'f,^\xc0Cb\xf3\x937\xbf\x11\x14"\xed\x13\x0b\x9f\xe7\xaf;\x94\xb0p\x13\xe1\x94\xdd\x85\xcf\x01\x0bC'
@@ -62,7 +62,7 @@ class WireguardSession:
         self._sock.connect((host, port))
 
         # --- Wireguard handshake ---
-        init_msg, ephemeral_priv, chain_key, hash_, sender_index = build_initiation(
+        init_msg, ephemeral_priv, chain_key, hash_, sender_index, mac1 = build_initiation(
             self.static_priv, self.static_pub, SERVER_STATIC_PUBLIC_KEY
         )
         self.sender_index = sender_index
@@ -72,11 +72,18 @@ class WireguardSession:
         # If this fails on your platform, replace with: self._sock.send(init_msg)
         await loop.sock_sendall(self._sock, init_msg)
 
-        # Wait for handshake response (type 0x02)
-        response = await asyncio.wait_for(
-            self._raw_recv(),
-            timeout=10.0
-        )
+        # Wait for handshake response — may be type 0x02 (done) or 0x03 (cookie challenge)
+        response = await asyncio.wait_for(self._raw_recv(), timeout=10.0)
+
+        if response[0] == 0x03:
+            # Cookie reply: decrypt the cookie and resend initiation with mac2 set
+            cookie = process_cookie_reply(response, SERVER_STATIC_PUBLIC_KEY, mac1)
+            init_msg, ephemeral_priv, chain_key, hash_, sender_index, mac1 = build_initiation(
+                self.static_priv, self.static_pub, SERVER_STATIC_PUBLIC_KEY, cookie=cookie
+            )
+            self.sender_index = sender_index
+            await loop.sock_sendall(self._sock, init_msg)
+            response = await asyncio.wait_for(self._raw_recv(), timeout=10.0)
 
         if response[0] != 0x02:
             raise ConnectionError(f"Expected handshake response (0x02), got {hex(response[0])}")

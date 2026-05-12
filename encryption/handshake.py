@@ -3,18 +3,22 @@ import struct
 
 from .primitives import (
     Hash, MixHash, DH, DH_Generate, Kdf1, Kdf2, Kdf3,
-    AEAD_encrypt, AEAD_decrypt, Mac, Timestamp,
-    CONSTRUCTION, IDENTIFIER, LABEL_MAC1, ZERO_KEY,
+    AEAD_encrypt, AEAD_decrypt, XAEAD_decrypt, Mac, Timestamp,
+    CONSTRUCTION, IDENTIFIER, LABEL_MAC1, LABEL_COOKIE, ZERO_KEY,
 )
 
 
 def build_initiation(static_private: bytes, static_public: bytes,
-                     server_public: bytes) -> tuple:
+                     server_public: bytes, cookie: bytes = None) -> tuple:
     """
     Build a Wireguard handshake initiation message (Section 5.4.2).
 
+    Args:
+        cookie: if provided (from a prior cookie reply), mac2 is computed as
+                Mac(cookie, msg + mac1). Otherwise mac2 is 16 zero bytes.
+
     Returns:
-        (message_bytes, ephemeral_private, chain_key, hash_, sender_index)
+        (message_bytes, ephemeral_private, chain_key, hash_, sender_index, mac1)
     """
     # 1. Initialise hash and chaining key
     chain_key = Hash(CONSTRUCTION)
@@ -52,11 +56,13 @@ def build_initiation(static_private: bytes, static_public: bytes,
     # 7. Calculate mac1: Mac(Hash(Label-Mac1 || S_R_pub), msg)
     mac1_key = Hash(LABEL_MAC1 + server_public)
     mac1     = Mac(mac1_key, msg)
-    mac2     = b'\x00' * 16
+
+    # mac2 = Mac(cookie, msg + mac1) if we have a cookie, else 16 zero bytes
+    mac2 = Mac(cookie, msg + mac1) if cookie is not None else b'\x00' * 16
 
     full_msg = msg + mac1 + mac2
 
-    return full_msg, ephemeral_priv, chain_key, hash_, sender_index
+    return full_msg, ephemeral_priv, chain_key, hash_, sender_index, mac1
 
 
 def process_response(response_bytes: bytes,
@@ -105,3 +111,35 @@ def process_response(response_bytes: bytes,
     send_key, recv_key = Kdf2(chain_key, b'')
 
     return send_key, recv_key, server_index
+
+
+def process_cookie_reply(reply_bytes: bytes, server_public: bytes, mac1: bytes) -> bytes:
+    """
+    Decrypt the cookie from a WireGuard cookie reply message (Section 5.4.7).
+
+    Cookie reply structure:
+        type(1=0x03) + reserved(3) + receiver_index(4) + nonce(24) + encrypted_cookie(32)
+        = 64 bytes total
+        (cookie is 16 bytes; encrypted form = 16 cookie + 16 Poly1305 tag = 32 bytes)
+
+    Args:
+        reply_bytes:   raw UDP packet
+        server_public: server's static public key
+        mac1:          mac1 from the initiation message that triggered this reply
+                       (used as additional data for decryption)
+
+    Returns:
+        16-byte cookie to use as mac2 input in the next initiation
+    """
+    if len(reply_bytes) < 64:
+        raise ValueError(f"Cookie reply too short: {len(reply_bytes)} bytes")
+    if reply_bytes[0] != 0x03:
+        raise ValueError(f"Expected cookie reply (0x03), got {hex(reply_bytes[0])}")
+
+    nonce            = reply_bytes[8:32]   # 24-byte random nonce
+    encrypted_cookie = reply_bytes[32:64]  # 16-byte cookie + 16-byte Poly1305 tag
+
+    # Key = Hash(Label-Cookie || S_R_pub)
+    cookie_key = Hash(LABEL_COOKIE + server_public)
+
+    return XAEAD_decrypt(cookie_key, nonce, encrypted_cookie, mac1)

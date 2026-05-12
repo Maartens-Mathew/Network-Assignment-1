@@ -82,6 +82,13 @@ def AEAD_decrypt(key, counter, ciphertext, authtext):
     return ChaCha20Poly1305(key).decrypt(nonce, ciphertext, authtext)
 
 
+def XAEAD_decrypt(key: bytes, nonce: bytes, ciphertext: bytes, authtext: bytes) -> bytes:
+    """XChaCha20-Poly1305 decryption with a 24-byte nonce. Used for cookie reply decryption."""
+    return nacl.bindings.crypto_aead_xchacha20poly1305_ietf_decrypt(
+        ciphertext, authtext, nonce, key
+    )
+
+
 def Timestamp():
     t = time.time()
     TAI_OFFSET = 10

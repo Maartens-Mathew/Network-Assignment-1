@@ -1,4 +1,4 @@
-.PHONY: setup test test-live test-all run clean
+.PHONY: setup test test-live test-extended test-all run clean
 
 # First-time setup: generates your .env from your Base64 secret key
 setup:
@@ -13,8 +13,13 @@ test-live:
 	@test -f .env || (echo "No .env found. Run: make setup" && exit 1)
 	bash -c 'source .env && uv run pytest tests/test_live.py -v -s'
 
-# Run all tests (offline first, then live)
-test-all: test test-live
+# Extended live tests against port 51821 (mac2 / cookie challenge)
+test-extended:
+	@test -f .env || (echo "No .env found. Run: make setup" && exit 1)
+	bash -c 'source .env && uv run pytest tests/test_extended.py -v -s'
+
+# Run all tests (offline first, then live, then extended)
+test-all: test test-live test-extended
 
 # TODO: start the chat client
 run:
