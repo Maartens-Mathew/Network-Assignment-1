@@ -11,7 +11,8 @@ def main() -> None:
 
     # define view models that live for lifetime of program
     # view_model = TaskViewModel()
-    
+
+    app = App()
     # entry point for first window
     # window = MainWindow(view_model)
 
