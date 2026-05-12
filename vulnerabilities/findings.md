@@ -2,7 +2,7 @@
 
 **Target:** `csc4026z.link` (cleartext port 51825, WireGuard port 51820)  
 **Protocol:** UDP/msgpack custom chat protocol  
-**Findings:** 4 confirmed vulnerabilities  
+**Findings:** 5 confirmed vulnerabilities (1 High, 3 Low, 1 Informational)  
 **Scope:** Authorised security research per assignment brief. DoS excluded.
 
 ---
@@ -44,20 +44,22 @@ Return an error ("not a member" or "not found") for users who have not joined th
 **PoC:** `poc_02_username_injection.py`
 
 ### What it is
-The server validates that cleartext usernames start with `clear-` and are under 20 characters, but applies no validation to the content after the prefix. Control characters, null bytes, and Unicode direction-override characters are accepted and stored verbatim.
+The server validates that cleartext usernames start with `clear-` and are under 20 characters, but applies no validation to the content after the prefix. Control characters, null bytes, Unicode direction-override characters, zero-width spaces, and homoglyph characters are all accepted and stored verbatim.
 
 ### Impact
-Log injection is blind — the attacker cannot read the logs they corrupt. The null byte is cosmetic. The RTL override (U+202E) causes text after it to render right-to-left in terminals, making a crafted name visually resemble another user's name, but by itself this is just a display oddity.
+Log injection is blind. The RTL override and homoglyph characters enable visual impersonation: a crafted username can appear identical to a legitimate one in chat UIs and terminals. Zero-width characters create names that look the same but are distinct at the byte level, enabling two "identical-looking" users to coexist. Full homoglyph substitution (e.g., fullwidth Latin letters) allows bypassing any display-layer username uniqueness check.
 
 ### Chain (Low likelihood)
-Combined with VULN-04: an attacker waits for a known user to disconnect, immediately claims their username (VULN-04 releases it instantly), and sets it with an RTL override so it visually matches the original. Everyone still in the channel sees what appears to be the same user. Requires knowing when the target will disconnect and winning the race to claim the name — low likelihood, but worth noting.
+Combined with VULN-04: an attacker waits for a known user to disconnect, immediately claims their username (VULN-04 releases it instantly), and sets it with a homoglyph or RTL override so it visually matches the original. Everyone still in the channel sees what appears to be the same user. Requires knowing when the target will disconnect and winning the race to claim the name — low likelihood, but worth noting.
 
-| Payload | Attack |
-|---|---|
-| `clear-a\nb` | Log injection — inserts fake entries into server logs (blind) |
-| `clear-test\x00end` | Null byte — C-string systems see a truncated name |
-| `clear-a\r\nb` | CRLF injection — corrupts HTTP-adjacent log systems |
-| `clear-‮admin` | RTL override — U+202E causes the suffix to render right-to-left in terminals |
+| Payload | Stored as | Attack |
+|---|---|---|
+| `clear-a\nb` | `b'clear-a\nb'` | Log injection — inserts fake entries (blind) |
+| `clear-test\x00end` | `b'clear-test\x00end'` | Null byte — C-string systems truncate |
+| `clear-a\r\nb` | `b'clear-a\r\nb'` | CRLF injection — corrupts log systems |
+| `clear-‮admin` | `b'clear-\xe2\x80\xaeadmin'` | RTL override (U+202E) — suffix renders right-to-left |
+| `clear-te​st` | `b'clear-te\xe2\x80\x8bst'` | Zero-width space (U+200B) — invisible in display |
+| `clear-ｃlear` | `b'clear-\xef\xbd\x83lear'` | Fullwidth 'ｃ' (U+FF43) — visually identical to 'c' |
 
 ### Reproduction
 1. Connect as a cleartext user.
@@ -142,13 +144,64 @@ The 60-second hold period should apply regardless of whether the session ended v
 
 ---
 
+## VULN-05 — Session Hijacking via Unbound Session IDs
+
+**Severity:** High  
+**Category:** Broken Authentication / Session Management  
+**PoC:** `poc_05_session_hijacking.py`
+
+### What it is
+The server assigns a u32 session ID on `CONNECT` (request type 1) but never binds that session to the client's source IP address or UDP port. Any socket that presents a valid session ID is treated as the legitimate session owner.
+
+On the cleartext channel (port 51825), every packet contains the session ID in plaintext. A passive observer on the same network — campus LAN, shared Wi-Fi, or any MITM position — can capture a single UDP packet from the victim, extract the session ID, and then use it from a completely separate socket to fully control the victim's account.
+
+### Impact
+Full account takeover. Confirmed via PoC:
+
+1. **Identity theft** — attacker sends `WHOAMI` with sniffed session ID; server returns victim's username
+2. **Message injection** — attacker sends channel messages that appear to come from the victim
+3. **Account rename** — attacker changes the victim's username
+4. **Session termination** — attacker sends `DISCONNECT`; victim's session is permanently destroyed
+
+The victim has no indication that their session has been compromised. There is no per-session secret, no IP binding, and no challenge-response that would prevent replay of a sniffed session ID.
+
+### Reproduction
+1. Observer (attacker) runs `tcpdump -i any -n 'udp port 51825'` on any host with network visibility.
+2. Victim connects to port 51825. Any packet the victim sends exposes their session ID in plaintext.
+3. Attacker opens a UDP socket, connects to `csc4026z.link:51825`, and replays requests using the victim's session ID.
+4. Server accepts all requests as if they came from the victim.
+
+### Evidence
+```
+[Victim]   Connected with session: 2574006832
+[Victim]   Username:               clear-victim99
+[Victim]   Joined channel:         poc-hijack-9370
+
+[Network]  Attacker sniffs session ID from cleartext UDP: 2574006832
+
+[Attacker] WHOAMI with sniffed session → username: 'clear-victim99'
+[Attacker] Sent channel message as victim → delivered: True
+           Content:    'hijacked message from attacker'
+[Attacker] Renamed victim → success: True
+[Attacker] Force-disconnected victim → success: True
+[Victim]   Session still alive after attacker DISCONNECT: False
+
+=== CONFIRMED: Full account takeover on cleartext channel ===
+```
+
+### Expected behaviour
+Session IDs should be bound to the source IP:port that established the session. Requests from a different source address using the same session ID should be rejected. Alternatively (or additionally), the cleartext channel should not be used for sensitive communication — WireGuard provides the transport-layer confidentiality that prevents session ID sniffing.
+
+---
+
 ## Summary
 
 | ID | Vulnerability | Severity | PoC |
 |---|---|---|---|
+| VULN-05 | Session hijacking via unbound session IDs | **High** | `poc_05_session_hijacking.py` |
 | VULN-01 | CHANNEL_INFO exposes non-member data | Low | `poc_01_channel_info_disclosure.py` |
 | VULN-02 | Username accepts control/injection chars | Low | `poc_02_username_injection.py` |
-| VULN-03 | Python exceptions exposed in responses | Informational | `poc_03_error_disclosure.py` |
 | VULN-04 | DISCONNECT bypasses username hold period | Low | `poc_04_username_reclaim.py` |
+| VULN-03 | Python exceptions exposed in responses | Informational | `poc_03_error_disclosure.py` |
 
-All four vulnerabilities are reproducible on demand by running the corresponding PoC script.
+All five vulnerabilities are reproducible on demand by running the corresponding PoC script.
