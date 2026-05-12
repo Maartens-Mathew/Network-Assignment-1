@@ -165,10 +165,23 @@ Full account takeover. Confirmed via PoC:
 
 The victim has no indication that their session has been compromised. There is no per-session secret, no IP binding, and no challenge-response that would prevent replay of a sniffed session ID.
 
+### Real-world attack path
+On a shared network (campus LAN, university Wi-Fi), the attacker runs:
+
+```bash
+tcpdump -i eth0 -n 'udp port 51825' -X
+```
+
+Every UDP packet the victim sends contains their session ID in the plaintext msgpack body — visible in the `tcpdump` hex dump. The attacker decodes the `session` field from any single captured packet. No cracking or brute-forcing required; the credential is sitting in the clear on the wire.
+
+The attacker then opens their own UDP socket and replays requests using the sniffed session ID. The server accepts them without challenge. The victim has no indication anything is wrong until their username changes or their session is killed.
+
+WireGuard (port 51820) is not affected — the entire UDP payload is encrypted, so `tcpdump` yields only ciphertext and the session ID never appears on the wire. This vulnerability is specific to the cleartext channel.
+
 ### Reproduction
-1. Observer (attacker) runs `tcpdump -i any -n 'udp port 51825'` on any host with network visibility.
-2. Victim connects to port 51825. Any packet the victim sends exposes their session ID in plaintext.
-3. Attacker opens a UDP socket, connects to `csc4026z.link:51825`, and replays requests using the victim's session ID.
+1. Attacker runs `tcpdump -i eth0 -n 'udp port 51825' -X` on any host with visibility to the victim's traffic.
+2. Victim connects to port 51825 and sends any request. The session ID is visible in plaintext in the packet body.
+3. Attacker extracts the session ID, opens a UDP socket, and sends requests to `csc4026z.link:51825` using that ID.
 4. Server accepts all requests as if they came from the victim.
 
 ### Evidence
