@@ -7,7 +7,8 @@ import msgpack
 from .handshake import build_initiation, process_response, process_cookie_reply
 from .transport import wrap_message, unwrap_message
 
-SERVER_STATIC_PUBLIC_KEY = b'f,^\xc0Cb\xf3\x937\xbf\x11\x14"\xed\x13\x0b\x9f\xe7\xaf;\x94\xb0p\x13\xe1\x94\xdd\x85\xcf\x01\x0bC'
+_SERVER_STATIC_PUBLIC_KEY = b'f,^\xc0Cb\xf3\x937\xbf\x11\x14"\xed\x13\x0b\x9f\xe7\xaf;\x94\xb0p\x13\xe1\x94\xdd\x85\xcf\x01\x0bC'
+SERVER_STATIC_PUBLIC_KEY  = _SERVER_STATIC_PUBLIC_KEY  # re-export for callers that import it directly
 
 
 class WireguardSession:
@@ -21,13 +22,23 @@ class WireguardSession:
         await session.send(msgpack.packb({'request_type': 3, ...}))
         data = await session.receive()
         msg  = msgpack.unpackb(data)
+
+    All credentials are injected — no environment variables are read.
+    The application layer (e.g. keyring) is responsible for supplying keys.
+    server_static_public_key defaults to the known csc4026z.link key.
     """
 
     PING_INTERVAL = 30  # seconds
 
-    def __init__(self, static_private_key: bytes, static_public_key: bytes):
-        self.static_priv = static_private_key
-        self.static_pub  = static_public_key
+    def __init__(
+        self,
+        static_private_key: bytes,
+        static_public_key: bytes,
+        server_static_public_key: bytes = _SERVER_STATIC_PUBLIC_KEY,
+    ):
+        self.static_priv      = static_private_key
+        self.static_pub       = static_public_key
+        self.server_static_pub = server_static_public_key
 
         self.send_key       = None
         self.recv_key       = None
@@ -61,7 +72,7 @@ class WireguardSession:
 
         # --- Wireguard handshake ---
         init_msg, ephemeral_priv, chain_key, hash_, sender_index, mac1 = build_initiation(
-            self.static_priv, self.static_pub, SERVER_STATIC_PUBLIC_KEY
+            self.static_priv, self.static_pub, self.server_static_pub
         )
         self.sender_index = sender_index
 
@@ -75,9 +86,9 @@ class WireguardSession:
 
         if response[0] == 0x03:
             # Cookie reply: decrypt the cookie and resend initiation with mac2 set
-            cookie = process_cookie_reply(response, SERVER_STATIC_PUBLIC_KEY, mac1)
+            cookie = process_cookie_reply(response, self.server_static_pub, mac1)
             init_msg, ephemeral_priv, chain_key, hash_, sender_index, mac1 = build_initiation(
-                self.static_priv, self.static_pub, SERVER_STATIC_PUBLIC_KEY, cookie=cookie
+                self.static_priv, self.static_pub, self.server_static_pub, cookie=cookie
             )
             self.sender_index = sender_index
             await loop.sock_sendall(self._sock, init_msg)
