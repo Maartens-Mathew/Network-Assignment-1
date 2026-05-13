@@ -1,5 +1,5 @@
 """
-PoC — VULN-05: Session Hijacking via Unbound Session IDs
+PoC — VULN-01: Session Hijacking via Unbound Session IDs
 
 The server assigns a numeric session ID (u32) on CONNECT but never binds it
 to the client's source IP:port. Any socket that presents a valid session ID
@@ -36,7 +36,7 @@ def req(s, msg):
 def h():
     return random.randrange(1, 2**32)
 
-print('=== PoC: VULN-05 Session Hijacking ===\n')
+print('=== PoC: VULN-01 Session Hijacking ===\n')
 
 # --- VICTIM ---
 sock_victim, sess_victim = connect()
