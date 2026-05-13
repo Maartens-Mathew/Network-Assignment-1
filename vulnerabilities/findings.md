@@ -7,11 +7,11 @@
 
 ---
 
-## VULN-05 — Session Hijacking via Unbound Session IDs
+## VULN-01 — Session Hijacking via Unbound Session IDs
 
 **Severity:** High  
 **Category:** Broken Authentication / Session Management  
-**PoC:** `poc_05_session_hijacking.py`
+**PoC:** `poc_01_session_hijacking.py`
 
 ### What it is
 The server assigns a u32 session ID on `CONNECT` (request type 1) but never binds that session to the client's source IP address or UDP port. Any socket that presents a valid session ID is treated as the legitimate session owner.
@@ -77,11 +77,11 @@ Session IDs should be bound to the source IP:port that established the session. 
 
 ---
 
-## VULN-01 — CHANNEL_INFO Exposes Non-Member Data
+## VULN-02 — CHANNEL_INFO Exposes Non-Member Data
 
 **Severity:** Low  
 **Category:** Broken Access Control  
-**PoC:** `poc_01_channel_info_disclosure.py`
+**PoC:** `poc_02_channel_info_disclosure.py`
 
 ### What it is
 Any authenticated user can call `CHANNEL_INFO` (request type 6) on any channel and receive the full member list and description — without ever joining that channel. The server does not check membership before responding.
@@ -107,11 +107,11 @@ Return an error ("not a member" or "not found") for users who have not joined th
 
 ---
 
-## VULN-02 — Username Accepts Control Characters and Injection Strings
+## VULN-03 — Username Accepts Control Characters and Injection Strings
 
 **Severity:** Low  
 **Category:** Input Validation  
-**PoC:** `poc_02_username_injection.py`
+**PoC:** `poc_03_username_injection.py`
 
 ### What it is
 The server validates that cleartext usernames start with `clear-` and are under 20 characters, but applies no validation to the content after the prefix. Control characters, null bytes, Unicode direction-override characters, zero-width spaces, and homoglyph characters are all accepted and stored verbatim.
@@ -159,6 +159,7 @@ Reject any username containing characters outside `[a-zA-Z0-9_\-]` after the pre
 **Category:** Logic Error / Spec Violation  
 **PoC:** `poc_04_username_reclaim.py`
 
+
 ### What it is
 The spec requires cleartext usernames to be held for 60 seconds after a session ends, preventing immediate impersonation. The hold is only enforced when a session is abandoned (socket closed without sending DISCONNECT). When a user sends an explicit `DISCONNECT` (request type 2), the server releases the username immediately — the hold window is skipped entirely.
 
@@ -166,7 +167,7 @@ The spec requires cleartext usernames to be held for 60 seconds after a session 
 A second user can claim the vacated username before the 60-second protection window has elapsed. The impersonation protection is effectively opt-out: any client that sends DISCONNECT bypasses it.
 
 ### Chain (Low likelihood)
-Combined with VULN-02: see VULN-02 chain description. VULN-04 is the enabler — without it, the 60-second hold would close the window before an attacker could act.
+Combined with VULN-03: see VULN-03 chain description. VULN-04 is the enabler — without it, the 60-second hold would close the window before an attacker could act.
 
 ### Reproduction
 1. User A sets username to `clear-target`.
@@ -189,11 +190,11 @@ The 60-second hold period should apply regardless of whether the session ended v
 
 ---
 
-## VULN-03 — Server Leaks Raw Python Exception Messages
+## VULN-05 — Server Leaks Raw Python Exception Messages
 
 **Severity:** Informational  
 **Category:** Information Disclosure  
-**PoC:** `poc_03_error_disclosure.py`
+**PoC:** `poc_05_error_disclosure.py`
 
 ### What it is
 Sending unexpected types for certain fields causes the server to return raw Python `TypeError` and `AttributeError` messages in the `error` response field, exposing internal code patterns.
@@ -267,11 +268,11 @@ Detailed profile for each user:
 
 | ID | Vulnerability | Severity | PoC |
 |---|---|---|---|
-| VULN-05 | Session hijacking via unbound session IDs | **High** | `poc_05_session_hijacking.py` |
-| VULN-01 | CHANNEL_INFO exposes non-member data | Low | `poc_01_channel_info_disclosure.py` |
-| VULN-02 | Username accepts control/injection chars | Low | `poc_02_username_injection.py` |
+| VULN-01 | Session hijacking via unbound session IDs | **High** | `poc_01_session_hijacking.py` |
+| VULN-02 | CHANNEL_INFO exposes non-member data | Low | `poc_02_channel_info_disclosure.py` |
+| VULN-03 | Username accepts control/injection chars | Low | `poc_03_username_injection.py` |
 | VULN-04 | DISCONNECT bypasses username hold period | Low | `poc_04_username_reclaim.py` |
-| VULN-03 | Python exceptions exposed in responses | Informational | `poc_03_error_disclosure.py` |
+| VULN-05 | Python exceptions exposed in responses | Informational | `poc_05_error_disclosure.py` |
 | VULN-06 | User enumeration via LIST_USERS + WHOIS | Informational | `poc_06_user_enumeration.py` |
 
 All six vulnerabilities are reproducible on demand by running the corresponding PoC script.
