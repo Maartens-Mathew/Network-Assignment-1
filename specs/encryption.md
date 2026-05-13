@@ -124,7 +124,7 @@ Wraps and unwraps single messages. No state, no I/O.
 
 The main class. Manages the socket, runs the handshake, tracks counters, queues incoming messages, and sends periodic pings. This is the only file the rest of the chat client needs to import.
 
-- `WireguardSession(static_private_key, static_public_key)` — construct with your keys
+- `WireguardSession(static_private_key, static_public_key, server_static_public_key=<default>)` — construct with your keys; all credentials are injected, no environment variables are read by the session layer
 - `await session.connect(host, port)` — handshake + CONNECT message
 - `await session.send(msgpack_bytes)` — encrypt and send
 - `await session.receive()` → `bytes` — next decrypted message from the server
@@ -143,23 +143,51 @@ Re-exports `WireguardSession` and all primitives from `encryption.primitives` so
 
 ### Setup
 
-Your student keys live in `.env` (gitignored). Load them once at startup:
+`WireguardSession` accepts all credentials as constructor arguments — it reads no environment variables. The application layer is responsible for supplying the keys, whether from keyring, `.env`, or any other source.
+
+#### Loading keys from keyring (recommended for the UI)
+
+The UI uses the [`keyring`](https://pypi.org/project/keyring/) library to persist keys across screens. Once a user's keys have been stored, connect like this:
 
 ```python
-import os, base64
+import keyring
+from encryption import WireguardSession
+
+# Retrieve stored keys for a user
+priv_hex = keyring.get_password("wg-chat", f"{username}.private")
+pub_hex  = keyring.get_password("wg-chat", f"{username}.public")
+
+session = WireguardSession(
+    static_private_key=bytes.fromhex(priv_hex),
+    static_public_key=bytes.fromhex(pub_hex),
+)
+await session.connect('csc4026z.link', 51820)
+```
+
+To store a user's keys (on registration or when seeding a pre-built user):
+
+```python
+import keyring
+
+keyring.set_password("wg-chat", f"{username}.private", static_private.hex())
+keyring.set_password("wg-chat", f"{username}.public",  static_public.hex())
+```
+
+To derive the public key from the private key (e.g. after registration gives you the secret):
+
+```python
+import nacl.public
+
+static_public = bytes(nacl.public.PrivateKey(static_private).public_key)
+```
+
+#### Loading keys from `.env` (tests and local dev)
+
+```python
+import os
 
 static_private = bytes.fromhex(os.environ['WG_STATIC_PRIVATE'])
 static_public  = bytes.fromhex(os.environ['WG_STATIC_PUBLIC'])
-```
-
-Or decode from the base64 values provided on the assignment website:
-
-```python
-import base64
-static_private = base64.b64decode("your-secret-key-base64==")
-# Derive the public key:
-import nacl.public
-static_public = bytes(nacl.public.PrivateKey(static_private).public_key)
 ```
 
 ### Connecting
