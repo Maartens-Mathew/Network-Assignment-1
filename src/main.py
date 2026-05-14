@@ -1,24 +1,31 @@
+import asyncio
 import sys
 
+from dependency_injector import providers
 from PySide6.QtWidgets import QApplication
+from qasync import QEventLoop
+
+from di.container import Container
 
 
-def main() -> None:
+def main():
     app = QApplication(sys.argv)
 
-   # Set style of application
-   # app.setStyleSheet(APP_STYLE)
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
 
-    # define view models that live for lifetime of program
-    # view_model = TaskViewModel()
+    container = Container()
+    container.config.server.host.from_value("csc4026z.link")
+    container.config.server.port.from_value(51825)
 
-    app = App()
-    # entry point for first window
-    # window = MainWindow(view_model)
+    with loop:
+        chat_protocol = loop.run_until_complete(container.create_chat_protocol())
+        container.chat_protocol.override(providers.Object(chat_protocol))
 
-    # window.show()
+        window = container.root_window()
+        window.show()
 
-    sys.exit(app.exec())
+        loop.run_forever()
 
 
 if __name__ == "__main__":
