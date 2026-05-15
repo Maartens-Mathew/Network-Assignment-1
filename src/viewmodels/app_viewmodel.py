@@ -27,6 +27,7 @@ from core.keystore.key_store import KeyStore
 from models.app_section import AppSection
 from models.user import User
 from repositories.chat_repository import ChatRepository
+from repositories.user_repository import UserRepository
 
 
 class AppViewModel(QObject):
@@ -34,12 +35,16 @@ class AppViewModel(QObject):
     current_user_changed = Signal()
     key_values_show = Signal(dict)
 
-    def __init__(self, repository: ChatRepository):
+    def __init__(self, chat_repository: ChatRepository, user_repository : UserRepository):
         super().__init__()
-        self.repository = repository
+        self.repository = chat_repository
 
         self.current_section = AppSection.CHANNELS
         self.current_user: User | None = None
+
+    async def change_username(self, username : str):
+        pass
+
 
     async def load_current_user(self):
         self.current_user = await self.repository.get_current_user()

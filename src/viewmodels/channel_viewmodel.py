@@ -8,6 +8,23 @@ from state.channel_state import ChannelState
 
 
 class ChannelsViewModel(QObject):
+    """
+    View Model for Channels Screen.
+
+    This view model manages the state and logic for the Channels Screen. So far, it provides functionality for:
+    - Loading channels
+    - Joining a channel
+    - Leaving a channel
+    - Getting information on a channel
+    - Creating a new channel
+
+    Not 100% sure about tying the chats to the channels themselves, because the user should be able to navigate
+    back and forth between channels and chats. Might require something like a list to persist chats per channel?
+
+    (Perhaps a list in the data class of Channel?)
+
+    Note for anyone else looking at this code:
+    """
     state_changed = Signal(ChannelState)
 
     def __init__(self, repository: ChannelRepository):

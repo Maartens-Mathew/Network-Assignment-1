@@ -2,6 +2,13 @@ from enum import IntEnum
 
 
 class RequestType(IntEnum):
+    """
+    These enums represent the different types of requests that can be sent to the server.
+
+    Question: Why enums? Why not just hard-code them manually?
+    Answer: When you define the shape of the dict variable before you send the message, you can just refer to the
+    actual thing you looking for, and not look on the csc2046z website to find what it sai
+    """
 
     #Session flags
     SESSION_CREATE = 1

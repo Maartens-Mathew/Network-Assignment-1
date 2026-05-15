@@ -143,8 +143,5 @@ class MainAppView(QWidget):
         QMessageBox.information(
             self,
             "Who am I?",
-            f"Display name: {user.display_name}\n"
             f"Username: @{user.username}\n"
-            f"Status: {user.status}\n"
-            f"User ID: {user.id}",
         )
