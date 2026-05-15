@@ -1,9 +1,15 @@
 # repositories/channel_repository.py
 from core.requests import ListChannelsRequest
 from core.requests.channel_create import CreateChannelRequest
+from core.requests.channel_info import ChannelInfoRequest
+from core.requests.channel_leave import LeaveChannelRequest
 from core.responses.channel_create import CreateChannelResponse
+from core.responses.channel_info import ChannelInfoResponse
+from core.responses.channel_leave import LeaveChannelResponse
 from core.responses.channel_list import ListChannelsResponse
+from core.responses.error import ErrorResponse
 from infrastructure.chat_protocol import ChatProtocol
+from models import Error
 from models.channel import Channel, ChannelDetailed
 
 
@@ -12,35 +18,67 @@ class ChannelRepository:
     def __init__(self, client: ChatProtocol):
         self._client = client  # shared socket, session managed internally
 
-    async def get_channels(self) -> list[Channel] | None:
+    async def get_channels(self) -> list[Channel] | Error:
+        response: ListChannelsResponse | ErrorResponse = await self._client.send_request(
+            ListChannelsRequest()
+        )
 
-        response : ListChannelsResponse = await self._client.send_request(ListChannelsRequest())
-
-        if response.response_type == 20:  # ERROR
-            return None
-
+        if isinstance(response, ErrorResponse):
+            return Error(response.message)
 
         return [
             Channel(channel)
             for channel in response.channels
         ]
 
-    async def get_channel_details(self, channel: Channel) -> ChannelDetailed | None:
-        pass
+    async def get_channel_details(self, channel: Channel) -> ChannelDetailed | Error:
+        response : ChannelInfoResponse | ErrorResponse = await self._client.send_request(
+            ChannelInfoRequest(channel=channel.name)
+        )
 
-    async def create_channel(self, channel: ChannelDetailed) -> Channel | None:
-        try:
-            response : CreateChannelResponse = await self._client.send_request(CreateChannelRequest(
-                channel_detailed=channel
-            ))
-            return Channel(response.channel)
-        except ValueError as e:
-            print(f"Server error: {e}")
-            return None
+        if isinstance(response, ErrorResponse):
+            return Error(response.message)
+
+        return ChannelDetailed(
+            name = response.channel,
+            description=response.description
+        )
 
 
-    async def join_channel(self, channel: Channel) -> bool:
-        pass
+    async def create_channel(self, channel: ChannelDetailed) -> ChannelDetailed | Error:
 
-    async def leave_channel(self, channel: Channel) -> bool:
-        pass
+        response: CreateChannelResponse | ErrorResponse = await self._client.send_request(
+            CreateChannelRequest(channel_detailed=channel)
+        )
+
+        if isinstance(response, ErrorResponse):
+            return Error(response.message)
+
+        return ChannelDetailed(
+            name = response.channel,
+        description= response.description
+        )
+
+
+    async def join_channel(self, channel: Channel) -> bool | Error:
+        response : bool | ErrorResponse = await self._client.send_request(
+            ChannelInfoRequest(channel=channel.name)
+        )
+
+        if isinstance(response, ErrorResponse):
+            return Error(response.message)
+
+        return response
+
+    async def leave_channel(self, channel: Channel) -> bool | Error:
+
+        response : LeaveChannelResponse | ErrorResponse = await self._client.send_request(
+            LeaveChannelRequest(
+                channel = channel.name
+            )
+        )
+
+        if isinstance(response, ErrorResponse):
+            return False
+
+        return response.channel == channel.name

@@ -1,385 +1,400 @@
-import asyncio
+from __future__ import annotations
 
-from qasync import asyncSlot
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+from qasync import asyncSlot
 
 from models.channel import Channel
 from state.channel_state import ChannelState
 from viewmodels.channel_viewmodel import ChannelsViewModel
+from views.channel_screen.channel_info_dialog import ChannelInfoDialog
+from views.channel_screen.channel_pages import ChannelPage
+from views.channel_screen.channel_styles import STYLE
+from views.channel_screen.new_channel_dialog import NewChannelDialog
 from views.reusable.chat_panel import ChatPanel
 
-# ---------------------------------------------------------------------------
-# Shared stylesheet
-# ---------------------------------------------------------------------------
-STYLE = """
-    QWidget {
-        background-color: #2c3e50;
-        color: #ecf0f1;
-        font-family: 'Segoe UI', sans-serif;
-    }
-    QListWidget {
-        background-color: #243342;
-        border: none;
-        border-radius: 6px;
-        padding: 4px;
-        outline: none;
-    }
-    QListWidget::item {
-        padding: 8px 10px;
-        border-radius: 4px;
-        color: #bdc3c7;
-        font-size: 13px;
-    }
-    QListWidget::item:hover {
-        background-color: #2e4057;
-        color: #ecf0f1;
-    }
-    QListWidget::item:selected {
-        background-color: #3498db;
-        color: white;
-    }
-    QPushButton#newChannelBtn {
-        background-color: #3498db;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 8px 12px;
-        font-size: 13px;
-        font-weight: bold;
-    }
-    QPushButton#newChannelBtn:hover  { background-color: #2980b9; }
-    QPushButton#newChannelBtn:pressed { background-color: #2471a3; }
-    QDialog { background-color: #2c3e50; }
-    QLabel  { color: #ecf0f1; font-size: 13px; }
-    QLineEdit, QTextEdit {
-        background-color: #1a252f;
-        color: #ecf0f1;
-        border: 1px solid #4a6278;
-        border-radius: 4px;
-        padding: 6px 8px;
-        font-size: 13px;
-    }
-    QLineEdit:focus, QTextEdit:focus { border-color: #3498db; }
-    QPushButton#createBtn {
-        background-color: #3498db;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 7px 18px;
-        font-size: 13px;
-    }
-    QPushButton#createBtn:hover  { background-color: #2980b9; }
-    QPushButton#cancelBtn {
-        background-color: transparent;
-        color: #bdc3c7;
-        border: 1px solid #4a6278;
-        border-radius: 4px;
-        padding: 7px 18px;
-        font-size: 13px;
-    }
-    QPushButton#cancelBtn:hover { background-color: #34495e; }
-"""
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-item widget
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ---------------------------------------------------------------------------
-# NewChannelDialog
-# ---------------------------------------------------------------------------
-class NewChannelDialog(QDialog):
-    def __init__(self, parent: QWidget = None):
+class ChannelItemWidget(QWidget):
+    """
+    A single row in the channel sidebar.
+
+    Layout:  [# name ──────────────]  [ⓘ]  [Join]  [Leave]
+
+    Signals are emitted with the Channel the row represents, so the
+    screen can forward them directly to the ViewModel without needing
+    to know which row was clicked.
+    """
+
+    join_clicked  = Signal(Channel)
+    leave_clicked = Signal(Channel)
+    info_clicked  = Signal(Channel)
+
+    def __init__(self, channel: Channel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Create New Channel")
-        self.setMinimumWidth(380)
-        self.setModal(True)
-        self.setStyleSheet(STYLE)
-        self._build_ui()
+        self.channel = channel
 
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(24, 24, 24, 20)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 3, 6, 3)
+        layout.setSpacing(5)
 
-        header = QLabel("Create a channel")
-        header.setStyleSheet("font-size: 18px; font-weight: bold;")
-        layout.addWidget(header)
+        # Channel name label
+        name = QLabel(f"# {channel.name}")
+        name.setStyleSheet("font-size: 13px; color: #bdc3c7;")
+        name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(name)
 
-        subtitle = QLabel("Channels are where conversations happen around a topic.")
-        subtitle.setStyleSheet("color: #95a5a6; font-size: 12px;")
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
+        # ⓘ info button
+        info_btn = QPushButton("ⓘ")
+        info_btn.setObjectName("infoBtn")
+        info_btn.setFixedSize(26, 26)
+        info_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        info_btn.setToolTip("Channel info")
+        info_btn.clicked.connect(lambda: self.info_clicked.emit(self.channel))
+        layout.addWidget(info_btn)
 
-        form = QFormLayout()
-        form.setSpacing(10)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        # Join button
+        join_btn = QPushButton("Join")
+        join_btn.setObjectName("joinBtn")
+        join_btn.setFixedSize(48, 26)
+        join_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        join_btn.setToolTip("Join this channel")
+        join_btn.clicked.connect(lambda: self.join_clicked.emit(self.channel))
+        layout.addWidget(join_btn)
 
-        name_label = QLabel("Channel Name")
-        name_label.setStyleSheet("font-weight: bold;")
-        self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("e.g. general, announcements")
-        self.name_input.setMaxLength(80)
-        form.addRow(name_label, self.name_input)
-
-        desc_label = QLabel("Description")
-        desc_label.setStyleSheet("font-weight: bold;")
-        self.desc_input = QTextEdit()
-        self.desc_input.setPlaceholderText("What is this channel about? (optional)")
-        self.desc_input.setFixedHeight(80)
-        self.desc_input.setAcceptRichText(False)
-        form.addRow(desc_label, self.desc_input)
-
-        layout.addLayout(form)
-
-        # Inline error label — hidden until needed
-        self.error_label = QLabel("")
-        self.error_label.setStyleSheet("color: #e74c3c; font-size: 12px;")
-        self.error_label.setVisible(False)
-        layout.addWidget(self.error_label)
-
-        # Loading label — hidden until needed
-        self.loading_label = QLabel("Creating channel…")
-        self.loading_label.setStyleSheet("color: #95a5a6; font-size: 12px;")
-        self.loading_label.setVisible(False)
-        layout.addWidget(self.loading_label)
-
-        # Buttons
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setObjectName("cancelBtn")
-        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.clicked.connect(self.reject)
-
-        self.create_btn = QPushButton("Create")
-        self.create_btn.setObjectName("createBtn")
-        self.create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.create_btn.setDefault(True)
-        self.create_btn.clicked.connect(self._on_create_clicked)
-
-        btn_row.addWidget(self.cancel_btn)
-        btn_row.addWidget(self.create_btn)
-        layout.addLayout(btn_row)
-
-    def _on_create_clicked(self):
-        name = self.name_input.text().strip()
-        if not name:
-            self.show_error("Channel name cannot be empty.")
-            self.name_input.setFocus()
-            return
-        self.error_label.setVisible(False)
-        self.accept()
-
-    # ------------------------------------------------------------------
-    # Public helpers called by ChannelScreen based on ViewModel state
-    # ------------------------------------------------------------------
-    def show_error(self, message: str):
-        """Display a server-side or validation error inside the dialog."""
-        self.error_label.setText(message)
-        self.error_label.setVisible(True)
-        self.loading_label.setVisible(False)
-        self.create_btn.setEnabled(True)
-        self.cancel_btn.setEnabled(True)
-
-    def set_loading(self, loading: bool):
-        """Disable controls and show a status line while the request is in flight."""
-        self.loading_label.setVisible(loading)
-        self.create_btn.setEnabled(not loading)
-        self.cancel_btn.setEnabled(not loading)
-        self.name_input.setEnabled(not loading)
-        self.desc_input.setEnabled(not loading)
-
-    def get_values(self) -> tuple[str, str]:
-        return (
-            self.name_input.text().strip(),
-            self.desc_input.toPlainText().strip(),
-        )
+        # Leave button
+        leave_btn = QPushButton("Leave")
+        leave_btn.setObjectName("leaveBtn")
+        leave_btn.setFixedSize(52, 26)
+        leave_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        leave_btn.setToolTip("Leave this channel")
+        leave_btn.clicked.connect(lambda: self.leave_clicked.emit(self.channel))
+        layout.addWidget(leave_btn)
 
 
-# ---------------------------------------------------------------------------
-# ChannelScreen
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Screen
+# ─────────────────────────────────────────────────────────────────────────────
+
 class ChannelScreen(QWidget):
+    """
+    View layer for channels.
+
+    Responsibilities:
+    - Build Qt widgets.
+    - Forward user intents to ChannelsViewModel.
+    - Render ViewModel state.
+    - Avoid owning business logic or repository logic.
+    """
+
     def __init__(self, view_model: ChannelsViewModel):
         super().__init__()
         self.setStyleSheet(STYLE)
 
         self.view_model = view_model
-        self._channel_items: list[Channel] = []
-        self._active_dialog: NewChannelDialog | None = None  # kept so states can reach it
+        self._active_dialog: NewChannelDialog | None = None
 
         self._build_ui()
         self._connect_signals()
+        self._show_empty("Select a channel to start chatting")
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
-    def _build_ui(self):
-        # ── Sidebar ────────────────────────────────────────────────────
-        sidebar = QWidget()
-        sidebar.setFixedWidth(220)
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(8, 8, 8, 8)
-        sidebar_layout.setSpacing(8)
+    # ── UI construction ───────────────────────────────────────────────────────
 
-        sidebar_header = QLabel("Channels")
-        sidebar_header.setStyleSheet("font-size: 15px; font-weight: bold; padding: 4px 2px;")
-        sidebar_layout.addWidget(sidebar_header)
-
-        self.channel_list = QListWidget()
-        sidebar_layout.addWidget(self.channel_list)
-
-        self.new_channel_btn = QPushButton("＋  New Channel")
-        self.new_channel_btn.setObjectName("newChannelBtn")
-        self.new_channel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        sidebar_layout.addWidget(self.new_channel_btn)
-
-        # ── Main area: stacked between loading overlay and chat panel ──
-        self.stack = QStackedWidget()
-
-        # Page 0 — loading
-        loading_page = QWidget()
-        loading_layout = QVBoxLayout(loading_page)
-        loading_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.loading_label = QLabel("Loading…")
-        self.loading_label.setStyleSheet("color: #95a5a6; font-size: 15px;")
-        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        loading_layout.addWidget(self.loading_label)
-        self.stack.addWidget(loading_page)   # index 0
-
-        # Page 1 — empty / placeholder
-        empty_page = QWidget()
-        empty_layout = QVBoxLayout(empty_page)
-        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint = QLabel("Select a channel to start chatting")
-        hint.setStyleSheet("color: #4a6278; font-size: 14px;")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        empty_layout.addWidget(hint)
-        self.stack.addWidget(empty_page)     # index 1
-
-        # Page 2 — chat panel
-        self.chat_panel = ChatPanel()
-        self.stack.addWidget(self.chat_panel)  # index 2
-
-        self.stack.setCurrentIndex(1)  # default: empty
-
-        # ── Root layout ────────────────────────────────────────────────
+    def _build_ui(self) -> None:
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        root.addWidget(sidebar)
-        root.addWidget(self.stack, 1)
 
-    def _connect_signals(self):
-        self.channel_list.itemClicked.connect(self.on_channel_clicked)
-        self.chat_panel.send_clicked.connect(self.on_send_clicked)
-        self.new_channel_btn.clicked.connect(self.on_new_channel_clicked)
-        self.view_model.state_changed.connect(self.on_state_changed)
+        root.addWidget(self._build_sidebar())
+        root.addWidget(self._build_content_stack(), 1)
 
-    # ------------------------------------------------------------------
-    # State handler
-    # ------------------------------------------------------------------
-    def on_state_changed(self, state: ChannelState):
+    def _build_sidebar(self) -> QWidget:
+        sidebar = QWidget()
+        sidebar.setFixedWidth(260)          # slightly wider to fit the three buttons
+
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        header = QLabel("Channels")
+        header.setStyleSheet("font-size: 15px; font-weight: bold; padding: 4px 2px;")
+        layout.addWidget(header)
+
+        self.channel_list = QListWidget()
+        self.channel_list.setSpacing(2)
+        layout.addWidget(self.channel_list, 1)
+
+        self.new_channel_button = QPushButton("＋  New Channel")
+        self.new_channel_button.setObjectName("newChannelBtn")
+        self.new_channel_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout.addWidget(self.new_channel_button)
+
+        return sidebar
+
+    def _build_content_stack(self) -> QStackedWidget:
+        self.stack = QStackedWidget()
+
+        self.loading_label = QLabel("Loading…")
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.loading_label.setStyleSheet("color: #95a5a6; font-size: 15px;")
+        self.stack.addWidget(self._centered_page(self.loading_label))
+
+        self.empty_label = QLabel()
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setStyleSheet("color: #4a6278; font-size: 14px;")
+        self.empty_label.setWordWrap(True)
+        self.stack.addWidget(self._centered_page(self.empty_label))
+
+        self.chat_panel = ChatPanel()
+        self.stack.addWidget(self.chat_panel)
+
+        return self.stack
+
+    def _centered_page(self, widget: QWidget) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(widget)
+        return page
+
+    # ── Signal wiring ─────────────────────────────────────────────────────────
+
+    def _connect_signals(self) -> None:
+        self.channel_list.itemClicked.connect(self._on_channel_item_clicked)
+        self.new_channel_button.clicked.connect(self._on_new_channel_clicked)
+        self.chat_panel.send_clicked.connect(self._on_send_clicked)
+        self.view_model.state_changed.connect(self._on_state_changed)
+
+    # ── State handler ─────────────────────────────────────────────────────────
+
+    def _on_state_changed(self, state: ChannelState) -> None:
         match state:
             case ChannelState.LOADING:
                 self._show_loading()
 
             case ChannelState.CHANNELS_LOADED:
-                self._render_channel_list()
-                self.stack.setCurrentIndex(1)   # show empty/hint until a channel is picked
+                self._render_channels()
+                self._show_empty_for_current_channels()
 
             case ChannelState.CHANNEL_SELECTED:
                 self._render_selected_channel()
-                self._render_messages()
-                self.stack.setCurrentIndex(2)   # show chat panel
+                self._show_chat()
+
+            case ChannelState.CHANNEL_JOINED:
+                self._render_channels()
+                self._show_empty_for_current_channels()
 
             case ChannelState.CHANNEL_CREATED:
-                self._close_dialog()
-                self._render_channel_list()
+                self._render_channels()
+                self._close_create_dialog()
+                self._show_empty_for_current_channels()
+
+            case ChannelState.CHANNEL_LEFT:
+                self._render_channels()
+                self._show_empty_for_current_channels()
+
+            case ChannelState.CHANNEL_INFO_LOADED:
+                self._restore_controls()
+                self._show_channel_info_popup()
+
+            case ChannelState.MESSAGES_LOADED:
+                self._render_messages()
+                self._show_chat()
 
             case ChannelState.ERROR:
-                self.stack.setCurrentIndex(1)   # stop showing spinner
-                if self._active_dialog is not None:
-                    # Error belongs to the dialog flow — show it inline
-                    self._active_dialog.show_error(self.view_model.error or "Unknown error")
-                else:
-                    QMessageBox.critical(self, "Error", self.view_model.error or "Unknown error")
+                self._show_error(self.view_model.error or "Unknown error")
 
-    # ------------------------------------------------------------------
-    # Render helpers
-    # ------------------------------------------------------------------
-    def _show_loading(self):
-        if self._active_dialog is not None:
+    # ── Visibility helpers ────────────────────────────────────────────────────
+
+    def _show_loading(self) -> None:
+        if self._active_dialog is not None and self._active_dialog.isVisible():
             self._active_dialog.set_loading(True)
-        else:
-            self.stack.setCurrentIndex(0)
-
-    def _render_channel_list(self):
-        self.channel_list.clear()
-        self._channel_items.clear()
-
-        for channel in self.view_model.channels:
-            item = QListWidgetItem(f"# {channel.name}")
-            item.setData(Qt.ItemDataRole.UserRole, channel.name)  # name as key
-            self.channel_list.addItem(item)
-            self._channel_items.append(channel)  # dict keyed by name
-
-    def _render_selected_channel(self):
-        channel = self.view_model.selected_channel
-        if channel:
-            self.chat_panel.set_title(f"# {channel.name}")
-
-    def _render_messages(self):
-        print("render messages")
-        # self.chat_panel.set_messages(self.view_model.)
-
-    def _close_dialog(self):
-        if self._active_dialog is not None:
-            self._active_dialog.accept()
-            self._active_dialog = None
-
-    # ------------------------------------------------------------------
-    # Event handlers
-    # ------------------------------------------------------------------
-    @asyncSlot()
-    async def load(self):
-        await self.view_model.load_channels()
-
-    def on_new_channel_clicked(self):
-        dialog = NewChannelDialog(parent=self)
-        self._active_dialog = dialog
-
-        result = dialog.exec()
-
-        # User cancelled before the request completed — clear the reference
-        if result != QDialog.DialogCode.Accepted:
-            self._active_dialog = None
             return
 
-        name, description = dialog.get_values()
-        asyncio.ensure_future(self.view_model.create_channel(name, description))
+        self.channel_list.setEnabled(False)
+        self.new_channel_button.setEnabled(False)
+        self.stack.setCurrentIndex(ChannelPage.LOADING)
+
+    def _restore_controls(self) -> None:
+        self.channel_list.setEnabled(True)
+        self.new_channel_button.setEnabled(True)
+
+    def _show_empty_for_current_channels(self) -> None:
+        self._restore_controls()
+
+        if not self.view_model.channels:
+            self._show_empty("No channels yet. Create one to get started.")
+        elif self.view_model.selected_channel is None:
+            self._show_empty("Select a channel to start chatting")
+        else:
+            self._show_chat()
+
+    def _show_empty(self, message: str) -> None:
+        self.empty_label.setText(message)
+        self.stack.setCurrentIndex(ChannelPage.EMPTY)
+
+    def _show_chat(self) -> None:
+        self._restore_controls()
+        self.stack.setCurrentIndex(ChannelPage.CHAT)
+
+    def _show_error(self, message: str) -> None:
+        self._restore_controls()
+
+        if self._active_dialog is not None and self._active_dialog.isVisible():
+            self._active_dialog.show_error(message)
+            return
+
+        self._show_empty_for_current_channels()
+        QMessageBox.critical(self, "Channel error", message)
+
+    def _show_channel_info_popup(self) -> None:
+        info = self.view_model.channel_info
+        if info is None:
+            return
+
+        dialog = ChannelInfoDialog(info, parent=self)
+        dialog.exec()
+
+    # ── Render helpers ────────────────────────────────────────────────────────
+
+    def _render_channels(self) -> None:
+        selected_name = (
+            self.view_model.selected_channel.name
+            if self.view_model.selected_channel
+            else None
+        )
+
+        self.channel_list.blockSignals(True)
+        self.channel_list.clear()
+
+        for channel in self.view_model.channels:
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, channel)
+
+            item_widget = ChannelItemWidget(channel)
+            item_widget.join_clicked.connect(self._on_join_clicked)
+            item_widget.leave_clicked.connect(self._on_leave_clicked)
+            item_widget.info_clicked.connect(self._on_info_clicked)
+
+            item.setSizeHint(item_widget.sizeHint())
+            self.channel_list.addItem(item)
+            self.channel_list.setItemWidget(item, item_widget)
+
+            if channel.name == selected_name:
+                self.channel_list.setCurrentItem(item)
+
+        self.channel_list.blockSignals(False)
+
+    def _render_selected_channel(self) -> None:
+        channel = self.view_model.selected_channel
+        if channel is None:
+            self._show_empty_for_current_channels()
+            return
+
+        self.chat_panel.set_title(f"# {channel.name}")
+        self._select_channel_in_list(channel)
+
+    def _select_channel_in_list(self, selected: Channel) -> None:
+        for index in range(self.channel_list.count()):
+            item = self.channel_list.item(index)
+            channel = item.data(Qt.ItemDataRole.UserRole)
+
+            if isinstance(channel, Channel) and channel.name == selected.name:
+                self.channel_list.setCurrentItem(item)
+                return
+
+    def _render_messages(self) -> None:
+        # Intentionally empty until ChannelsViewModel exposes messages.
+        # Once available:
+        #     self.chat_panel.set_messages(self.view_model.messages)
+        pass
+
+    def _close_create_dialog(self) -> None:
+        if self._active_dialog is None:
+            return
+
+        dialog = self._active_dialog
+        self._active_dialog = None
+
+        dialog.set_loading(False)
+        dialog.accept()
+
+    # ── Slots ─────────────────────────────────────────────────────────────────
+
+    @asyncSlot()
+    async def load(self) -> None:
+        await self.view_model.load_channels()
+
+    def _on_new_channel_clicked(self) -> None:
+        if self._active_dialog is not None and self._active_dialog.isVisible():
+            self._active_dialog.raise_()
+            self._active_dialog.activateWindow()
+            return
+
+        dialog = NewChannelDialog(parent=self)
+        dialog.create_requested.connect(self._on_create_channel_requested)
+        dialog.finished.connect(self._on_create_dialog_finished)
+
+        self._active_dialog = dialog
+        dialog.open()
+
+    def _on_create_dialog_finished(self) -> None:
+        self._active_dialog = None
+
+    @asyncSlot(str, str)
+    async def _on_create_channel_requested(self, name: str, description: str) -> None:
+        await self.view_model.create_channel(name, description)
 
     @asyncSlot(QListWidgetItem)
-    async def on_channel_clicked(self, item: QListWidgetItem):
-        channel_name = item.data(Qt.ItemDataRole.UserRole)
-        if channel_name:
-            await self.view_model.select_channel(channel_name)
+    async def _on_channel_item_clicked(self, item: QListWidgetItem) -> None:
+        """
+        Clicking the row itself (outside the buttons) selects the channel.
+        Button clicks are handled by the item widget's own signals.
+        """
+        channel = item.data(Qt.ItemDataRole.UserRole)
+
+        if not isinstance(channel, Channel):
+            return
+
+        if self.view_model.selected_channel == channel:
+            return
+
+        await self.view_model.select_channel(channel)
+
+    @asyncSlot(Channel)
+    async def _on_join_clicked(self, channel: Channel) -> None:
+        await self.view_model.join_channel(channel)
+
+    @asyncSlot(Channel)
+    async def _on_leave_clicked(self, channel: Channel) -> None:
+        await self.view_model.leave_channel(channel)
+
+    @asyncSlot(Channel)
+    async def _on_info_clicked(self, channel: Channel) -> None:
+        await self.view_model.get_channel_info(channel)
 
     @asyncSlot(str)
-    async def on_send_clicked(self, content: str):
+    async def _on_send_clicked(self, content: str) -> None:
+        content = content.strip()
+
+        if not content:
+            return
+
+        # Uncomment once ChannelsViewModel exposes send_message(content).
         # await self.view_model.send_message(content)
+
         self.chat_panel.clear_input()

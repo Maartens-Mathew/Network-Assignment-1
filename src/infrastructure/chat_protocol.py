@@ -6,6 +6,7 @@ from typing import TypeVar
 import msgpack
 
 from core.requests.request import Request
+from core.responses.error import ErrorResponse
 from core.responses.response import Response
 
 R = TypeVar("R", bound=Response)
@@ -67,7 +68,7 @@ class ChatProtocol(asyncio.DatagramProtocol):
     # Public API
     # -------------------------
 
-    async def send_request(self, request: Request[R], timeout: float = 5.0) -> R:
+    async def send_request(self, request: Request[R], timeout: float = 5.0) -> R | ErrorResponse:
         request.request_handle = random.randint(0, 2**32 - 1)
         request.session = self._session or 0
 

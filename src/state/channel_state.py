@@ -1,4 +1,5 @@
-from enum import IntEnum
+from enum import IntEnum, auto
+
 
 class ChannelState(IntEnum):
     LOADING         = 0
@@ -7,3 +8,6 @@ class ChannelState(IntEnum):
     MESSAGES_LOADED = 3
     CHANNEL_CREATED = 4
     ERROR           = 5
+    CHANNEL_LEFT    = 6
+    CHANNEL_JOINED = auto()
+    CHANNEL_INFO_LOADED = auto()
