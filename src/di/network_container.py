@@ -1,7 +1,7 @@
 from dependency_injector import providers
 from dependency_injector.containers import DeclarativeContainer
 
-from infrastructure.chat_protocol import create_udp_client, ChatProtocol
+from network_client.chat_protocol import create_udp_client, ChatProtocol
 
 
 class NetworkContainer(DeclarativeContainer):

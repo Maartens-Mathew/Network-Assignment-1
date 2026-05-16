@@ -7,7 +7,7 @@ class RequestType(IntEnum):
 
     Question: Why enums? Why not just hard-code them manually?
     Answer: When you define the shape of the dict variable before you send the message, you can just refer to the
-    actual thing you looking for, and not look on the csc2046z website to find what it sai
+    actual thing you are looking for and not look on the csc2046z website to find what it said.
     """
 
     #Session flags

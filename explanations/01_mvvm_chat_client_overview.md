@@ -42,49 +42,87 @@ The repository and view model should both expose functions that correspond to th
 
 The repository knows how to talk to the protocol. The view model knows how to turn repository results into UI state. The screen knows how to render that state.
 
-## Suggested folder structure
+## Folder structure
+
+The project is organised by feature. Each feature owns its model, repository, view model, and view in a single folder. Shared infrastructure lives outside the feature folders.
 
 ```text
 src/
   core/
     requests/
     responses/
-  infrastructure/
-    chat_protocol.py
-    transport/
-      plaintext_transport.py
-      wireguard_transport.py
-  models/
-    channel.py
-    user.py
-    message.py
-    error.py
-  repositories/
-    channel_repository.py
-    user_repository.py
-    message_repository.py
-    auth_repository.py
-  state/
-    channel_state.py
-    user_state.py
-    message_state.py
-    login_state.py
-    app_state.py
-  viewmodels/
-    channel_viewmodel.py
-    user_viewmodel.py
-    message_viewmodel.py
-    login_viewmodel.py
-    app_viewmodel.py
-  views/
-    channel_screen/
-    user_screen/
-    message_screen/
-    login_screen/
+    types.py
+    event_bus.py
+    session_manager.py
+    keystore/
+  di/
+    app_container.py
+    features/
+      channel_container.py
+      chat_container.py
+      login_container.py
+      user_container.py
+  features/
+    auth/
+      view/
+        login_view.py
+      viewmodel/
+        login_viewmodel.py
+    channels/
+      model/
+        channel.py
+      repository/
+        channel_repository.py
+      view/
+        channel_screen.py
+        channel_pages.py
+        channel_info_dialog.py
+        new_channel_dialog.py
+        items/
+        styles/
+      viewmodel/
+        channel_state.py
+        channel_viewmodel.py
+    chat/
+      model/
+        message.py
+      repository/
+        chat_repository.py
+      view/
+      viewmodel/
+    users/
+      model/
+        user.py
+        transport_type.py
+      repository/
+        user_repository.py
+      view/
+        user_screen.py
+      viewmodel/
+        user_state.py
+        user_viewmodel.py
+  main_app/
     root_window.py
+    main_app_window.py
+    model/
+      app_section.py
+    repository/
+      session_repository.py
+    view/
+      styles/
+    viewmodel/
+      app_viewmodel.py
+      session_viewmodel.py
+  network_client/
+    chat_protocol.py
+    wireguard_session.py
+  utils/
+    error.py
 ```
 
-This structure is not mandatory, but the important thing is that each feature follows the same direction of dependency:
+Each feature is self-contained: all of its MVVM layers sit together under `features/<name>/`. Anything shared across features — protocol, core request/response types, DI wiring, utilities — lives outside the feature folders.
+
+The important thing is that the direction of dependency is consistent regardless of where files live:
 
 ```text
 View depends on ViewModel
@@ -298,18 +336,3 @@ For each new feature, follow this order:
 8. Test both success and error responses.
 
 Do not start with the screen. The screen should be the final layer that reflects already-defined use cases and states.
-
-## Key team convention
-
-Every use case should answer these questions:
-
-1. What function does the repository expose?
-2. What successful model does it return?
-3. What error type does it return?
-4. What function does the view model expose?
-5. What fields does the view model update?
-6. What state does the view model emit on success?
-7. What state does the view model emit on failure?
-8. How does the screen render each state?
-
-If a teammate cannot answer those questions, the feature is not designed clearly enough yet.

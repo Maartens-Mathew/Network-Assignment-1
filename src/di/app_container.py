@@ -1,8 +1,8 @@
 from dependency_injector import providers
 from dependency_injector.containers import DeclarativeContainer
 
-from viewmodels.app_viewmodel import AppViewModel
-from views.root_window import RootWindow
+from main_app.viewmodel.app_viewmodel import AppViewModel
+from main_app.root_window import RootWindow
 
 
 

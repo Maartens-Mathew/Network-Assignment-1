@@ -1,7 +1,7 @@
 from dependency_injector import providers
 from dependency_injector.containers import DeclarativeContainer
 
-from repositories.session_repository import SessionRepository
+from main_app.repository.session_repository import SessionRepository
 
 
 class SessionContainer(DeclarativeContainer):

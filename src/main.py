@@ -6,12 +6,12 @@ from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
 
 from di.app_container import AppContainer
-from di.chat_container import ChatContainer
+from di.features.chat_container import ChatContainer
 from di.network_container import NetworkContainer
-from di.channel_container import ChannelContainer
-from di.login_container import LoginContainer
+from di.features.channel_container import ChannelContainer
+from di.features.login_container import LoginContainer
 from di.session_container import SessionContainer
-from di.user_container import UserContainer
+from di.features.user_container import UserContainer
 
 
 def main() -> None:
