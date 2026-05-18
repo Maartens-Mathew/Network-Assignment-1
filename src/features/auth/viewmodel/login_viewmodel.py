@@ -1,4 +1,5 @@
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Property
+from qasync import asyncSlot
 
 from core.keystore.key_store import KeyStore
 from main_app.repository.session_repository import SessionRepository
@@ -17,10 +18,11 @@ class LoginViewModel(QObject):
         self._username = ""
         self._public_key = ""
         self._private_key = ""
+        self._is_loading = False
         self.key_store = KeyStore(app_name="chat_client", password=b"csc4026z")
         self._session_repository = session_repository
 
-    @property
+    @Property(str, notify=fields_changed)
     def username(self):
         return self._username
 
@@ -31,7 +33,7 @@ class LoginViewModel(QObject):
         self._username = value
         self.fields_changed.emit()
 
-    @property
+    @Property(str, notify=fields_changed)
     def public_key(self):
         return self._public_key
 
@@ -42,7 +44,7 @@ class LoginViewModel(QObject):
         self._public_key = value
         self.fields_changed.emit()
 
-    @property
+    @Property(str, notify=fields_changed)
     def private_key(self):
         return self._private_key
 
@@ -53,20 +55,26 @@ class LoginViewModel(QObject):
         self._private_key = value
         self.fields_changed.emit()
 
-    @property
-    def can_continue(self):
+    @Property(bool, notify=fields_changed)
+    def canContinue(self):
         return (
             bool(self._username.strip())
             and bool(self._public_key.strip())
             and bool(self._private_key.strip())
         )
 
+    @Property(bool, notify=loading_changed)
+    def isLoading(self):
+        return self._is_loading
+
+    @asyncSlot()
     async def confirm(self):
         """Call this when the login button is clicked."""
-        if not self.can_continue:
+        if not self.canContinue:
             self.can_continue_changed.emit(False)
             return
 
+        self._is_loading = True
         self.loading_changed.emit(True)
         try:
             self.key_store.save(
@@ -85,7 +93,12 @@ class LoginViewModel(QObject):
         except Exception as e:
             self.login_failed.emit(str(e))
         finally:
+            self._is_loading = False
             self.loading_changed.emit(False)
+
+    @asyncSlot()
+    async def login(self):
+        await self.confirm()
 
     def clear(self):
         self._username = ""
