@@ -55,7 +55,7 @@ class ChannelScreen(QWidget):
     ) -> None:
         super().__init__()
 
-        style_file = QFile(":/auth/styles.qss")
+        style_file = QFile(":/channels/styles.qss")
 
         if style_file.open(QFile.OpenModeFlag.ReadOnly):
             stream = QTextStream(style_file)
