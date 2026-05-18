@@ -3,6 +3,7 @@ from PySide6.QtCore import QObject, Signal
 from features.chat.model.message import ChatMessage
 from features.users.model.user import User
 from features.chat.repository.chat_repository import ChatRepository
+from features.users.repository.user_repository import UserRepository
 
 
 class UsersViewModel(QObject):
@@ -11,9 +12,9 @@ class UsersViewModel(QObject):
     messages_changed = Signal()
     loading_changed = Signal(bool)
 
-    def __init__(self, repository: ChatRepository):
+    def __init__(self, user_repository: UserRepository):
         super().__init__()
-        self.repository = repository
+        self.user_repository = user_repository
 
         self.users: list[User] = []
         self.selected_user: User | None = None
@@ -23,7 +24,7 @@ class UsersViewModel(QObject):
         self.loading_changed.emit(True)
 
         try:
-            self.users = await self.repository.get_users()
+            self.users = await self.user_repository.get_users()
             self.users_changed.emit()
         finally:
             self.loading_changed.emit(False)
@@ -35,7 +36,7 @@ class UsersViewModel(QObject):
             self.selected_user = user
             self.selected_user_changed.emit()
 
-            self.messages = await self.repository.open_dm(user.id)
+           # self.messages = await self.repository.open_dm(user.id)
             self.messages_changed.emit()
         finally:
             self.loading_changed.emit(False)
@@ -48,8 +49,8 @@ class UsersViewModel(QObject):
         if not content:
             return
 
-        self.messages = await self.repository.send_dm_message(
-            self.selected_user.id,
-            content,
-        )
+        # self.messages = await self.repository.send_dm_message(
+        #     self.selected_user.id,
+        #     content,
+        # )
         self.messages_changed.emit()

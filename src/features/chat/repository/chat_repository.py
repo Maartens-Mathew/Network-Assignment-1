@@ -1,110 +1,61 @@
-import asyncio
+# features/chat/repository/chat_repository.py
+from PySide6.QtCore import QObject, Signal
 
 from features.channels.model.channel import Channel
-from features.chat.model.message import ChatMessage
+from features.chat.model.message import ChatMessage, UserMessage
 from features.users.model.user import User
+from network_client.chat_protocol import ChatProtocol
 
 
-class ChatRepository:
+class ChatRepository(QObject):
     """
-    Dummy repository.
+    Thin cache layer between the network protocol and the rest of the app.
 
-    In a real app, this would call your server over TCP/WebSocket/HTTP.
-    For now, we use asyncio.sleep(...) to simulate request-response latency.
+    Signals
+    -------
+    on_new_channel_message  Emitted whenever a channel message arrives from the
+                            protocol.  Listeners receive the full ChatMessage.
+    on_new_user_message     Emitted whenever a direct/user message arrives.
     """
 
-    def __init__(self):
-        self._current_user = User(
-            username="mathew"
-        )
+    on_new_channel_message = Signal(ChatMessage)
+    on_new_user_message = Signal(UserMessage)
 
-        self._channels = [
-            Channel("general"),
-            Channel("python"),
-            Channel("qt-pyside"),
-            Channel("random"),
-        ]
+    def __init__(self, client: ChatProtocol):
+        super().__init__()                          # Required: QObject init
+        self._channel_messages: dict[Channel, list[ChatMessage]] = {}
+        self._user_conversations: dict[User, list[UserMessage]] = {}
 
-        self._users = [
-            User("alice"),
-            User("bob"),
-            User("carla"),
-            User("david"),
-        ]
+        self._chat_protocol = client
+        self._chat_protocol.channel_message_received.connect(self._on_channel_message_received)
+        self._chat_protocol.user_message_received.connect(self._on_user_message_received)
 
-        self._channel_messages = {
-            1: [
-                ChatMessage("Alice", "Welcome to general."),
-                ChatMessage("Bob", "Hey everyone."),
-            ],
-            2: [
-                ChatMessage("Carla", "Has anyone tried asyncio with PySide6?"),
-                ChatMessage("Mathew", "Yes, qasync works nicely for that."),
-            ],
-            3: [
-                ChatMessage("David", "QStackedWidget is useful for navigation."),
-            ],
-            4: [
-                ChatMessage("Alice", "Anyone playing anything interesting?"),
-            ],
-        }
+    # ── Protocol callbacks ────────────────────────────────────────────────────
 
-        self._dm_messages = {
-            2: [
-                ChatMessage("Alice", "Hey Mathew."),
-                ChatMessage("Mathew", "Hey Alice."),
-            ],
-            3: [
-                ChatMessage("Bob", "Can you review my Python code later?"),
-            ],
-            4: [
-                ChatMessage("Carla", "The UI mockup looks good."),
-            ],
-            5: [],
-        }
+    def _on_channel_message_received(self, message: ChatMessage) -> None:
+        bucket = self._channel_messages.setdefault(message.channel, [])
+        bucket.append(message)
+        self.on_new_channel_message.emit(message)   # Forward to subscribers
 
-    async def login(self, username: str, password: str) -> User:
-        await asyncio.sleep(0.5)
+    def _on_user_message_received(self, message: UserMessage) -> None:
+        bucket = self._user_conversations.setdefault(message.sender, [])
+        bucket.append(message)
+        self.on_new_user_message.emit(message)
 
-        # Dummy login rule.
-        # Any non-empty username/password is accepted.
-        if not username.strip() or not password.strip():
-            raise ValueError("Username and password are required.")
+    # ── Queries ───────────────────────────────────────────────────────────────
 
-        return self._current_user
+    def get_channel_messages(self, channel: Channel) -> list[ChatMessage]:
+        return self._channel_messages.get(channel, [])
 
-    async def get_current_user(self) -> User:
-        await asyncio.sleep(0.2)
-        return self._current_user
+    def get_user_messages(self, user: User) -> list[UserMessage]:
+        return self._user_conversations.get(user, [])
 
-    async def get_channels(self) -> list[Channel]:
-        await asyncio.sleep(0.4)
-        return self._channels
+    # ── Commands ──────────────────────────────────────────────────────────────
 
-    async def get_users(self) -> list[User]:
-        await asyncio.sleep(0.4)
-        return self._users
+    async def send_channel_message(self, channel: Channel, content: str) -> None:
+        """Send a message to *channel* via the underlying protocol."""
+        await self._chat_protocol.send_channel_message(channel, content)
 
-    async def join_channel(self, channel_id: int) -> list[ChatMessage]:
-        await asyncio.sleep(0.4)
-        return self._channel_messages.get(channel_id, [])
-
-    async def open_dm(self, user_id: int) -> list[ChatMessage]:
-        await asyncio.sleep(0.4)
-        return self._dm_messages.get(user_id, [])
-
-    async def send_channel_message(self, channel_id: int, content: str) -> list[ChatMessage]:
-        await asyncio.sleep(0.25)
-
-        message = ChatMessage("Mathew", content)
-        self._channel_messages.setdefault(channel_id, []).append(message)
-
-        return self._channel_messages[channel_id]
-
-    async def send_dm_message(self, user_id: int, content: str) -> list[ChatMessage]:
-        await asyncio.sleep(0.25)
-
-        message = ChatMessage("Mathew", content)
-        self._dm_messages.setdefault(user_id, []).append(message)
-
-        return self._dm_messages[user_id]
+    async def send_user_message(self, recipient: User, content: str) -> None:
+        """Send a direct message to *recipient* via the underlying protocol."""
+        await self._chat_protocol.send_user_message(recipient, content)

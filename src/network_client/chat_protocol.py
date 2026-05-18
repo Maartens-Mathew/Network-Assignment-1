@@ -1,18 +1,26 @@
 # network_client/chat_protocol.py
 import asyncio
+from datetime import datetime
 import random
 from typing import TypeVar
 
 import msgpack
+from PySide6.QtCore import Signal, QObject
 
+from core import ResponseType
 from core.requests.request import Request
 from core.responses.state.error import ErrorResponse
 from core.responses.response import Response
+from features.channels.model.channel import Channel
+from features.chat.model.message import ChatMessage, UserMessage
+from vulnerabilities.poc_06_user_enumeration import users
 
 R = TypeVar("R", bound=Response)
 
 
-class ChatProtocol(asyncio.DatagramProtocol):
+class ChatProtocol(asyncio.DatagramProtocol, QObject):
+    channel_message_received = Signal(ChatMessage)
+    user_message_received = Signal(ChatMessage)
     """
     Owns the UDP socket and pending request map.
     Stores session token and injects it into every outgoing request.
@@ -20,6 +28,7 @@ class ChatProtocol(asyncio.DatagramProtocol):
     """
 
     def __init__(self):
+        super().__init__()
         self._transport: asyncio.DatagramTransport = None
         self._pending: dict[int, asyncio.Future[dict]] = {}
         self._session: int | None = None
@@ -52,6 +61,30 @@ class ChatProtocol(asyncio.DatagramProtocol):
             or response.get(b"request_handle")
             or response.get(b"response_handle")
         )
+
+        response_type = response.get("response_type")
+
+        match response_type:
+            case ResponseType.USER_MESSAGE:
+                userMessage = UserMessage(
+                    message= response["message"],
+                    sender= response["username"]
+                )
+
+                self.user_message_received.emit(userMessage)
+                return
+            case ResponseType.CHANNEL_MESSAGE:
+
+                channelMessage = ChatMessage(
+                    channel= Channel(response["channel"]),
+                    message= response["message"],
+                    sender= response["username"],
+                    time_sent= datetime.now()
+                )
+
+                self.channel_message_received.emit(channelMessage)
+
+                return
 
         if handle in self._pending:
             future = self._pending.pop(handle)

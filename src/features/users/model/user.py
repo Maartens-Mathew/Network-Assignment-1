@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from models import Channel
+from features.channels.model.channel import Channel
 from features.users.model.transport_type import TransportType
 
 

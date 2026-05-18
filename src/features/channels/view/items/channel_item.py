@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from models import Channel
+from features.channels.model.channel import Channel
 
 
 # ─────────────────────────────────────────────────────────────────────────────

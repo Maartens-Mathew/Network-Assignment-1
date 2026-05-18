@@ -1,3 +1,4 @@
+# features/channels/view/channel_screen.py
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -22,6 +23,7 @@ from features.channels.view.channel_pages import ChannelPage
 from features.channels.view.styles.channel_styles import STYLE
 from features.channels.view.items.channel_item import ChannelItemWidget
 from features.channels.view.new_channel_dialog import NewChannelDialog
+from features.chat.viewmodel.channel_chat_viewmodel import ChannelChatViewModel
 from components.chat_panel import ChatPanel
 
 
@@ -33,18 +35,29 @@ class ChannelScreen(QWidget):
     """
     View layer for channels.
 
-    Responsibilities:
+    Responsibilities
+    ----------------
     - Build Qt widgets.
-    - Forward user intents to ChannelsViewModel.
-    - Render ViewModel state.
-    - Avoid owning business logic or repository logic.
+    - Forward user intents to ``ChannelsViewModel`` (channel list actions) and
+      ``ChannelChatViewModel`` (message display & sending).
+    - Render state changes from both view models.
+    - Own no business or repository logic.
+
+    The split between the two view models mirrors the split in the UI:
+    - Left sidebar  → ``ChannelsViewModel``
+    - Right panel   → ``ChannelChatViewModel``
     """
 
-    def __init__(self, view_model: ChannelsViewModel):
+    def __init__(
+        self,
+        view_model: ChannelsViewModel,
+        chat_view_model: ChannelChatViewModel,
+    ) -> None:
         super().__init__()
         self.setStyleSheet(STYLE)
 
         self.view_model = view_model
+        self.chat_view_model = chat_view_model
         self._active_dialog: NewChannelDialog | None = None
 
         self._build_ui()
@@ -63,7 +76,7 @@ class ChannelScreen(QWidget):
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
-        sidebar.setFixedWidth(260)          # slightly wider to fit the three buttons
+        sidebar.setFixedWidth(260)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -113,12 +126,20 @@ class ChannelScreen(QWidget):
     # ── Signal wiring ─────────────────────────────────────────────────────────
 
     def _connect_signals(self) -> None:
+        # Sidebar interactions
         self.channel_list.itemClicked.connect(self._on_channel_item_clicked)
         self.new_channel_button.clicked.connect(self._on_new_channel_clicked)
+
+        # Chat panel
         self.chat_panel.send_clicked.connect(self._on_send_clicked)
+
+        # ChannelsViewModel — drives the left sidebar and navigation
         self.view_model.state_changed.connect(self._on_state_changed)
 
-    # ── State handler ─────────────────────────────────────────────────────────
+        # ChannelChatViewModel — drives the right chat panel
+        self.chat_view_model.messages_changed.connect(self._render_messages)
+
+    # ── ChannelsViewModel state handler ───────────────────────────────────────
 
     def _on_state_changed(self, state: ChannelState) -> None:
         match state:
@@ -130,6 +151,12 @@ class ChannelScreen(QWidget):
                 self._show_empty_for_current_channels()
 
             case ChannelState.CHANNEL_SELECTED:
+                # Tell the chat VM which channel we've moved to; it will emit
+                # messages_changed and _render_messages will handle the rest.
+                channel = self.view_model.selected_channel
+                if channel is not None:
+                    self.chat_view_model.set_channel(channel)
+
                 self._render_selected_channel()
                 self._show_chat()
 
@@ -144,15 +171,12 @@ class ChannelScreen(QWidget):
 
             case ChannelState.CHANNEL_LEFT:
                 self._render_channels()
+                self.chat_view_model.clear_channel()
                 self._show_empty_for_current_channels()
 
             case ChannelState.CHANNEL_INFO_LOADED:
                 self._restore_controls()
                 self._show_channel_info_popup()
-
-            case ChannelState.MESSAGES_LOADED:
-                self._render_messages()
-                self._show_chat()
 
             case ChannelState.ERROR:
                 self._show_error(self.view_model.error or "Unknown error")
@@ -257,10 +281,12 @@ class ChannelScreen(QWidget):
                 return
 
     def _render_messages(self) -> None:
-        # Intentionally empty until ChannelsViewModel exposes messages.
-        # Once available:
-        #     self.chat_panel.set_messages(self.view_model.messages)
-        pass
+        """
+        Called whenever ``ChannelChatViewModel.messages_changed`` fires — both
+        on channel switch and on incoming messages.
+        """
+        messages = self.chat_view_model.get_messages()
+        self.chat_panel.set_messages(messages)
 
     def _close_create_dialog(self) -> None:
         if self._active_dialog is None:
@@ -300,10 +326,6 @@ class ChannelScreen(QWidget):
 
     @asyncSlot(QListWidgetItem)
     async def _on_channel_item_clicked(self, item: QListWidgetItem) -> None:
-        """
-        Clicking the row itself (outside the buttons) selects the channel.
-        Button clicks are handled by the item widget's own signals.
-        """
         channel = item.data(Qt.ItemDataRole.UserRole)
 
         if not isinstance(channel, Channel):
@@ -329,11 +351,8 @@ class ChannelScreen(QWidget):
     @asyncSlot(str)
     async def _on_send_clicked(self, content: str) -> None:
         content = content.strip()
-
         if not content:
             return
 
-        # Uncomment once ChannelsViewModel exposes send_message(content).
-        # await self.view_model.send_message(content)
-
+        await self.chat_view_model.send_message(content)
         self.chat_panel.clear_input()

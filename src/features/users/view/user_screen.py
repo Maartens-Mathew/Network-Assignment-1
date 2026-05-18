@@ -45,6 +45,7 @@ class UserScreen(QWidget):
         self.user_list.clear()
         self._user_items.clear()
 
+        return
         for user in self.view_model.users:
             item = QListWidgetItem(f"@{user.username}")
 
@@ -63,7 +64,7 @@ class UserScreen(QWidget):
 
     @asyncSlot(QListWidgetItem)
     async def on_user_clicked(self, item: QListWidgetItem):
-        user_id = item.data(Qt.UserRole)
+        user_id = item.data(Qt.ItemDataRole.UserRole)
         user = self._user_items[user_id]
 
         await self.view_model.select_user(user)

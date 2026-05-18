@@ -9,8 +9,8 @@ from core.responses.channel.channel_leave import LeaveChannelResponse
 from core.responses.channel.channel_list import ListChannelsResponse
 from core.responses.state.error import ErrorResponse
 from network_client.chat_protocol import ChatProtocol
-from models import Error
 from features.channels.model.channel import Channel, ChannelDetailed
+from utils.error import Error
 
 
 class ChannelRepository:

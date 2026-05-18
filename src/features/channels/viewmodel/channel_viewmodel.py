@@ -1,10 +1,10 @@
 # viewmodels/channel_viewmodel.py
 from PySide6.QtCore import QObject, Signal
 
-from models import Error
 from features.channels.model.channel import Channel, ChannelDetailed
 from features.channels.repository.channel_repository import ChannelRepository
 from features.channels.viewmodel.channel_state import ChannelState
+from utils.error import Error
 
 
 class ChannelsViewModel(QObject):

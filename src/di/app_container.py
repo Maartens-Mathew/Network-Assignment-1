@@ -18,7 +18,6 @@ class AppContainer(DeclarativeContainer):
 
     app_view_model = providers.Singleton(
         AppViewModel,
-        chat_repository= container.chat_repository,
         user_repository= container.user_repository
     )
 

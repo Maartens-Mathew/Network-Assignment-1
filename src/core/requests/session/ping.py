@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from typing import Any
 
-from core.serializable_message import SerializableMessage
+from core.requests.request import Request, R
 from core.types import RequestType
 
 
 @dataclass
-class PingRequest(SerializableMessage):
+class PingRequest(Request):
+    def deserialize(self, data: dict) -> R:
+        pass
+
     session : int
     request_handle : int
     request_type : RequestType = RequestType.PING

@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.responses.response import Response
-from core.serializable_message import SerializableMessage
-from models import User
+from features.users.model.user import User
 
 
 @dataclass

@@ -12,9 +12,8 @@ class AppViewModel(QObject):
     current_user_changed = Signal()
     key_values_show = Signal(dict)
 
-    def __init__(self, chat_repository: ChatRepository, user_repository : UserRepository):
+    def __init__(self, user_repository : UserRepository):
         super().__init__()
-        self.repository = chat_repository
 
         self.current_section = AppSection.CHANNELS
         self.current_user: User | None = None
@@ -22,10 +21,6 @@ class AppViewModel(QObject):
     async def change_username(self, username : str):
         pass
 
-
-    async def load_current_user(self):
-        self.current_user = await self.repository.get_current_user()
-        self.current_user_changed.emit()
 
     def go_to_channels(self):
         self.current_section = AppSection.CHANNELS

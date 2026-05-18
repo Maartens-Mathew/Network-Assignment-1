@@ -27,7 +27,7 @@ class UserContainer(DeclarativeContainer):
 
     users_view_model = providers.Singleton(
         UsersViewModel,
-        repository=user_repository,
+        user_repository=user_repository,
     )
 
     user_screen = providers.Factory(

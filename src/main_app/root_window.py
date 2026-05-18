@@ -54,7 +54,6 @@ class RootWindow(QMainWindow):
         self.root_stack.setCurrentWidget(self.main_app_view)
 
         try:
-            await self.app_view_model.load_current_user()
             await self.channels_screen.load()
             await self.users_screen.load()
         except Exception as e:

@@ -6,7 +6,6 @@ from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
 
 from di.app_container import AppContainer
-from di.features.chat_container import ChatContainer
 from di.network_container import NetworkContainer
 from di.features.channel_container import ChannelContainer
 from di.features.login_container import LoginContainer
@@ -24,7 +23,6 @@ def main() -> None:
     network_container.config.server.host.from_value("csc4026z.link")
     network_container.config.server.port.from_value(51825)
 
-    chat_container = ChatContainer()
     channel_container = ChannelContainer()
     session_container = SessionContainer()
     login_container = LoginContainer()
@@ -37,6 +35,8 @@ def main() -> None:
         chat_protocol = loop.run_until_complete(
             network_container.create_chat_protocol()
         )
+
+
 
         network_container.chat_protocol.override(
             providers.Object(chat_protocol)

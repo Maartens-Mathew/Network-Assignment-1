@@ -1,6 +1,9 @@
+import datetime
 from dataclasses import dataclass
 
-from models import User
+
+from features.channels.model.channel import Channel
+from features.users.model.user import User
 
 
 @dataclass
@@ -10,5 +13,7 @@ class UserMessage:
 
 @dataclass
 class ChatMessage:
-    sender : str
+    sender : User
+    channel : Channel
     message : str
+    time_sent : datetime.datetime
