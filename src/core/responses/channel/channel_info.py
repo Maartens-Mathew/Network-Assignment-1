@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 from core.responses.response import Response
+from core.responses.state.error import ErrorResponse
 
 
 @dataclass
@@ -10,9 +11,9 @@ class ChannelInfoResponse(Response):
     description : str
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ChannelInfoResponse :
-        if data.get("response_type") == 20:  # ERROR
-            raise ValueError(data.get("error", "Unknown server error"))
+    def from_dict(cls, data: dict[str, Any]) -> Self | ErrorResponse:
+        if data.get("response_type") == 20:
+            return ErrorResponse.from_dict(data)
 
         return cls(
             session=int(data["session"]),

@@ -1,5 +1,6 @@
 # network_client/chat_protocol.py
 import asyncio
+import json
 from datetime import datetime
 import random
 from typing import TypeVar
@@ -54,7 +55,8 @@ class ChatProtocol(asyncio.DatagramProtocol, QObject):
 
     def datagram_received(self, data: bytes, addr):
         response = msgpack.unpackb(data, raw=False)
-        print(f"Received: {response}")
+        formatted_response = json.dumps(response, indent = 4)
+        print(f"Received: {formatted_response}")
         handle = (
             response.get("request_handle")
             or response.get("response_handle")

@@ -3,6 +3,7 @@ from typing import Any, Self
 
 from core import ResponseType
 from core.responses.response import Response
+from core.responses.state.error import ErrorResponse
 
 
 @dataclass
@@ -12,7 +13,11 @@ class ListChannelsResponse(Response):
     next_page : bool = field(default=False)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Self:
+    def from_dict(cls, data: dict[str, Any]) -> Self | ErrorResponse:
+
+        if data.get("response_type") == 20:
+            return ErrorResponse.from_dict(data)
+
         return cls(
             session=data["session"],
             response_handle=data["response_handle"],

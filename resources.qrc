@@ -1,0 +1,11 @@
+<!DOCTYPE RCC><RCC version="1.0">
+
+<qresource prefix="auth">
+    <file alias="styles.qss">src/features/auth/view/styles/auth_styles.qss</file>
+</qresource>
+
+    <qresource prefix="channels">
+    <file alias="styles.qss">src/features/channels/view/styles/channel_styles.qss</file>
+</qresource>
+
+</RCC>

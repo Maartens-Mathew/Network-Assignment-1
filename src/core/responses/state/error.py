@@ -15,6 +15,6 @@ class ErrorResponse(Response):
         return cls(
             session=data["session"],
             response_handle=data["response_handle"],
-            message=data["message"]
+            message=data["error"]
         )
 

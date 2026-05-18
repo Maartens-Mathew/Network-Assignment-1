@@ -1,7 +1,7 @@
 # features/channels/view/channel_screen.py
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QFile, QTextStream
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -20,7 +20,7 @@ from features.channels.viewmodel.channel_state import ChannelState
 from features.channels.viewmodel.channel_viewmodel import ChannelsViewModel
 from features.channels.view.channel_info_dialog import ChannelInfoDialog
 from features.channels.view.channel_pages import ChannelPage
-from features.channels.view.styles.channel_styles import STYLE
+import resources_rc
 from features.channels.view.items.channel_item import ChannelItemWidget
 from features.channels.view.new_channel_dialog import NewChannelDialog
 from features.chat.viewmodel.channel_chat_viewmodel import ChannelChatViewModel
@@ -54,7 +54,13 @@ class ChannelScreen(QWidget):
         chat_view_model: ChannelChatViewModel,
     ) -> None:
         super().__init__()
-        self.setStyleSheet(STYLE)
+
+        style_file = QFile(":/auth/styles.qss")
+
+        if style_file.open(QFile.OpenModeFlag.ReadOnly):
+            stream = QTextStream(style_file)
+            self.setStyleSheet(stream.readAll())
+            style_file.close()
 
         self.view_model = view_model
         self.chat_view_model = chat_view_model

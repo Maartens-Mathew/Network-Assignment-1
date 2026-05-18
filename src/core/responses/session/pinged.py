@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from core.serializable_message import SerializableMessage
 from core.types import ResponseType
 
 

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Self
 from core import ResponseType
 
+
+
 @dataclass
 class Response(ABC):
     response_type: ResponseType

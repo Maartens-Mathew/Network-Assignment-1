@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QFile, QTextStream
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
@@ -12,8 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-from features.channels.view.styles.channel_styles import STYLE
+import resources_rc
 
 
 class NewChannelDialog(QDialog):
@@ -31,7 +30,13 @@ class NewChannelDialog(QDialog):
         self.setWindowTitle("Create New Channel")
         self.setMinimumWidth(380)
         self.setModal(True)
-        self.setStyleSheet(STYLE)
+
+        style_file = QFile(":/auth/styles.qss")
+
+        if style_file.open(QFile.OpenModeFlag.ReadOnly):
+            stream = QTextStream(style_file)
+            self.setStyleSheet(stream.readAll())
+            style_file.close()
 
         self._build_ui()
 

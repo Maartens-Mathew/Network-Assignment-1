@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.responses.response import Response
+from core.responses.state.error import ErrorResponse
 from features.users.model.user import User
 
 
@@ -21,7 +22,10 @@ class ConnectResponse(Response):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ConnectResponse:
+    def from_dict(cls, data: dict[str, Any]) -> ConnectResponse | ErrorResponse:
+        if data.get("response_type") == 20:
+            return ErrorResponse.from_dict(data)
+
         return cls(
             session = int(data["session"]),
             response_handle = int(data["response_handle"]),
